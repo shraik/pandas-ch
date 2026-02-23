@@ -94,11 +94,28 @@ def contc(
 
 
 def intoclickhouse(client, df, table_name):
+    """Записать датафрейм в clickhouse.
+    Если в БД будет существовать таблица с таким имененем, она будет перезаписна.
 
+    Args:
+        client (_type_): соединение к clickhouse
+        df (_type_): датафрейм для записи в clickhouse
+        table_name (_type_): имя таблицы в clickhouse
+    """
     create_table_schema(client, df, table_name)
     # Optional: Insert the data using the client's insert method
-    # client.insert_df(table_name, df)
-    client.insert_df_arrow(table_name, df)
+
+    backend_np = False
+    for dtype in df.dtypes:
+        if str(dtype).endswith("[pyarrow]") is not True:
+            backend_np = True
+            break
+
+    if backend_np:
+        df2 = df.convert_dtypes(dtype_backend="pyarrow")
+        client.insert_df_arrow(table_name, df2)
+    else:
+        client.insert_df_arrow(table_name, df)
 
     print(f"Data from dataframe inserted into clickhouse table '{table_name}'.")
 

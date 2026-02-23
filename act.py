@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
     # client.command(f"CREATE DATABASE IF NOT EXISTS {db_name}")
 
-    client = contc(db_name)
+    client = contc(db_name, hostip="192.168.5.17")
 
     chtest2(client)
     # ch_dict(client)
