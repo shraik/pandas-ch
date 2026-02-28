@@ -11,3 +11,4 @@ data/
 .venv
 configs.db
 .vscode/launch.json
+uv.lock
