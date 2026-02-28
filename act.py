@@ -89,14 +89,7 @@ def ch_dict(client):
     print("Data inserted successfully using a list of dictionaries.")
 
 
-if __name__ == "__main__":
-    db_name = "pandas"
-    # client = contc()
-
-    # client.command(f"CREATE DATABASE IF NOT EXISTS {db_name}")
-
-    client = contc(db_name, hostip="192.168.5.17")
-
+def test3(client):
     # chtest2(client)
     # ch_dict(client)
     save_file_data_ch(
@@ -120,6 +113,181 @@ if __name__ == "__main__":
         ),
     )
 
-    if client.ping():
-        client.close()
-        print("\nConnection to ClickHouse closed.")
+
+def load_mol_excel(clumns: dict, header_row: list, filename: str) -> pd.DataFrame:
+    """считывает xlsx файл с поиском колонок в 2х этажном заголовке таблицы
+    возвращает фрейм с найденными колонками
+    """
+
+    # res = pd.read_excel(filename, header=header_row, engine="calamine")
+    res = pd.read_excel(filename, dtype=str, header=header_row, engine="calamine")
+    res2 = pd.read_excel(filename, nrows=header_row[0], engine="calamine")
+
+    # логическая матрица поиска слова во фрейме
+    res3 = res2.apply(lambda col: col.str.contains("Период", na=False), axis=1)
+    # удалить пустые строки и колонки, взять первое значение
+    res4 = (
+        res2[res3]
+        .dropna(axis="index", how="all")
+        .dropna(axis="columns", how="all")
+        .values[0][0]
+    )
+
+    # print(res.columns.to_flat_index())
+
+    res.columns = ["_".join(a) for a in res.columns.to_flat_index()]
+
+    lisc = res.columns.to_list()
+
+    print("Список прочитанных колонок: ", lisc)
+    # список найденных имён колонок
+    resl = []
+    # дикт для переименования найденных колонок
+    renmd = {}
+
+    for li in clumns:
+        dfit = next((x for x in lisc if x.find(li) > -1), "Not found")
+        if dfit != "Not found":
+            resl.append(dfit)
+            renmd[dfit] = clumns[li]
+        else:
+            # print(f'Ошибка. Не нашел колонку "{li}" в списке колонок: {lisc} ')
+            print(f'\nОшибка. Не нашел колонку "{li}" в списке колонок')
+            sys.exit()
+
+    res = res[resl]
+    res.rename(
+        columns=renmd,
+        inplace=True,
+    )
+    res["Версия"] = res4
+
+    return res
+
+
+def makeclean_mol(filename: str, allcol=False):
+    """Считывает файл остатков по МОЛ и возвращает фрейм"""
+    global gl_writer
+
+    mol_file = filename
+
+    df = load_mol_excel(
+        {
+            "Статья_Статья": "Статья",
+            "Статья_Счет": "Вид деят",
+            "Статья_Номенклатура": "Номенклатура",
+            "Статья_КСМ": "КСМ",
+            "Статья_Склад/Контрагент/Работник": "Наименование подразделения",
+            "Освоение_Количество списание": "Освоение. списание (шт)",
+            "Освоение_Количество передача в экспл.": "Освоение. передача (шт)",
+            "Освоение_Количество ввод в экспл.": "Освоение. ввод (шт)",
+            "Освоение_Итого (без НДС)": "Освоение. Сумма (без НДС)",
+            "Конечный остаток_Количество": "Остаток (шт)",
+            # "Конечный остаток_Сумма (без НДС)": "Остаток Сумма без ТЗР (без НДС)",
+            "Конечный остаток_Итого с ТЗР (без НДС)": "Остаток Сумма (без НДС)",
+        },
+        [7, 8],
+        mol_file,
+    )
+
+    df.dropna(
+        subset=["Вид деят", "Номенклатура", "Наименование подразделения"], inplace=True
+    )
+
+    # df["Расход. Сумма (без НДС)"] = df["Расход. Сумма (без НДС)"].fillna(0.0)
+
+    # mask = df["Вид деят"].str.fullmatch(r"^10.+")
+    # mask = (
+    #     df["Вид деят"].str.match("10") & ~df["Вид деят"].str.match("10.12")
+    # )
+    # df.loc[mask, "Вид деят"] = "МТР"
+
+    mask = df["Статья"].str.match("Амортизация малоценных ОС") | df["Статья"].str.match(
+        "Подготовка к вводу в эксплуатацию"
+    )
+    df.loc[mask, "Вид деят"] = "ОНСС"
+
+    df["Вид деят"] = df["Вид деят"].where(df["Вид деят"] == "ОНСС", "МТР")
+
+    # обрезка пробелов слева и справа
+    df["Наименование подразделения"] = df["Наименование подразделения"].str.strip()
+    df["Наименование подразделения"] = df["Наименование подразделения"].replace(
+        {
+            "МОЛ ЦАП": "ОАСУТП",
+            "МОЛ ЦАП УМАИТ": "ОТ",
+            "МОЛ ОТ ": "ОТ",
+            "МОЛ ОТ": "ОТ",
+            "ЦАП связь аварийный": "ОТ",
+            "МОЛ ЦАП  ИТ": "ОИТ",
+            "Оргтехника офис": "ОИТ",
+        },
+        # na_action="ignore",
+    )
+
+    df[
+        [
+            "Освоение. Сумма (без НДС)",
+            # "Расход (шт)",
+            # "Приход (шт)",
+            # "Расход. Сумма (без НДС)",
+            "Остаток (шт)",
+            # "Остаток Сумма без ТЗР (без НДС)",
+            "Остаток Сумма (без НДС)",
+        ]
+    ] = df[
+        [
+            "Освоение. Сумма (без НДС)",
+            # "Расход (шт)",
+            # "Приход (шт)",
+            # "Расход. Сумма (без НДС)",
+            "Остаток (шт)",
+            # "Остаток Сумма без ТЗР (без НДС)",
+            "Остаток Сумма (без НДС)",
+        ]
+    ].apply(pd.to_numeric, errors="coerce")
+
+    df[
+        [
+            "Освоение. Сумма (без НДС)",
+            # "Расход. Сумма (без НДС)",
+            # "Остаток Сумма без ТЗР (без НДС)",
+            "Остаток Сумма (без НДС)",
+        ]
+    ] = df[
+        [
+            "Освоение. Сумма (без НДС)",
+            # "Расход. Сумма (без НДС)",
+            # "Остаток Сумма без ТЗР (без НДС)",
+            "Остаток Сумма (без НДС)",
+        ]
+    ].multiply(0.001, axis="columns")
+
+    return df
+
+
+if __name__ == "__main__":
+    db_name = "pandas"
+    # client = contc()
+    client = contc(db_name, hostip="192.168.5.17")
+
+    # filets = r"\\192.168.5.199\ilja\source\python\Python-xls\data\склады\2026-02-28\1c-file-2026-02-статья2.xlsx"
+    # df_in = makeclean_mol(filets)
+    # df_in.to_excel(r"data\loaded_f.xlsx")
+
+    file_sap1 = r"\\192.168.5.199\ilja\source\python\Python-xls\data\склады\2026-02-28\все мтр на_27.02.2026.xlsx"
+    df1 = pd.read_excel(file_sap1, engine="calamine", nrows=10, dtype_backend="pyarrow")
+
+    file_sap2 = r"\\192.168.5.199\ilja\source\python\Python-xls\data\склады\2026-02-28\Лист в ALVXXL01 (1).xlsx"
+    df1 = pd.read_excel(file_sap1, engine="calamine", nrows=10, dtype_backend="pyarrow")
+    df2 = pd.read_excel(file_sap2, engine="calamine", nrows=10, dtype_backend="pyarrow")
+    print(df1.info())
+
+    print(df1.columns.sort_values().to_list())
+    print(df2.columns.sort_values().to_list())
+
+    df1 = pd.read_excel(file_sap1, engine="calamine", nrows=10)
+
+
+if client.ping():
+    client.close()
+    print("\nConnection to ClickHouse closed.")
