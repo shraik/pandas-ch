@@ -6,9 +6,14 @@ dist/
 wheels/
 *.egg-info
 data/
+out/
+C1_in/
+SAP_in/
+
 
 # Virtual environments
 .venv
 configs.db
 .vscode/launch.json
 uv.lock
+act.ini
