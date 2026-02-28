@@ -13,17 +13,17 @@ if dict(int_env).get("AIRFLOW_HOME", None) is not None:
     from smbclient import open_file, register_session, stat, scandir as scandir_smb  # type: ignore
 
 
-def save_file_data(engine, modified, ftl, gl_dagmode=True) -> bool:
-    """записать дату файла в БД"""
-    if gl_dagmode is False and engine is None:
-        # локальный запуск и пустой engine - инициализируем локальную базу sqlite
-        engine = initdb()
+# def save_file_data(engine, modified, ftl, gl_dagmode=True) -> bool:
+#     """записать дату файла в БД"""
+#     if gl_dagmode is False and engine is None:
+#         # локальный запуск и пустой engine - инициализируем локальную базу sqlite
+#         engine = initdb()
 
-    conf_dict = pd.read_sql_table("config_vp", engine).set_index("index").to_dict()
-    conf_dict["config"][ftl] = modified
-    conf_df = pd.DataFrame(conf_dict)
-    conf_df.to_sql("config_vp", engine, if_exists="replace")
-    return True
+#     conf_dict = pd.read_sql_table("config_vp", engine).set_index("index").to_dict()
+#     conf_dict["config"][ftl] = modified
+#     conf_df = pd.DataFrame(conf_dict)
+#     conf_df.to_sql("config_vp", engine, if_exists="replace")
+#     return True
 
 
 def check_file_data(engine, modified, ftl) -> bool:
@@ -46,6 +46,40 @@ def check_file_data(engine, modified, ftl) -> bool:
         conf_df.to_sql("config_vp", engine, if_exists="replace")
     else:
         conf_dict = pd.read_sql_table("config_vp", engine).set_index("index").to_dict()
+        if conf_dict["config"].get(ftl, None) is not None:
+            if conf_dict["config"][ftl] >= modified:
+                # сохранённая дата больше или = дате файла
+                return False
+
+    return True
+
+
+def check_file_data_ch(
+    client: clickhouse_connect.driver.client, modified: datetime, ftl: str
+) -> bool:
+    """Записать датафрейм в clickhouse.
+    Если в БД будет существовать таблица с таким имененем, она будет перезаписна.
+
+    Args:
+        client (clickhouse_connect.driver.client): Клиент clickhouse
+        modified (datetime): дата файла
+        ftl (str): имя файла
+
+    Returns:
+        bool: ответ на: дата файла отправленного на проверку новее чем сохраненная в БД?
+    """
+
+    table_name = "config_vp"
+    # проверка существования таблицы
+    result = client.command(f"EXISTS {table_name}")
+
+    if result != 1:
+        datetime_object = datetime(2020, 1, 1, 0, 0, 0)
+        save_file_data_ch(client, datetime_object, ftl)
+    else:
+        conf_dict = (
+            client.query_df(f"SELECT * FROM {table_name}").set_index("index").to_dict()
+        )
         if conf_dict["config"].get(ftl, None) is not None:
             if conf_dict["config"][ftl] >= modified:
                 # сохранённая дата больше или = дате файла
@@ -94,11 +128,28 @@ def contc(
 
 
 def intoclickhouse(client, df, table_name):
+    """Записать датафрейм в clickhouse.
+    Если в БД будет существовать таблица с таким имененем, она будет перезаписна.
 
+    Args:
+        client (_type_): соединение к clickhouse
+        df (_type_): датафрейм для записи в clickhouse
+        table_name (_type_): имя таблицы в clickhouse
+    """
     create_table_schema(client, df, table_name)
     # Optional: Insert the data using the client's insert method
-    # client.insert_df(table_name, df)
-    client.insert_df_arrow(table_name, df)
+
+    backend_np = False
+    for dtype in df.dtypes:
+        if str(dtype).endswith("[pyarrow]") is not True:
+            backend_np = True
+            break
+
+    if backend_np:
+        df2 = df.convert_dtypes(dtype_backend="pyarrow")
+        client.insert_df_arrow(table_name, df2)
+    else:
+        client.insert_df_arrow(table_name, df)
 
     print(f"Data from dataframe inserted into clickhouse table '{table_name}'.")
 
@@ -116,6 +167,7 @@ def create_table_schema(client, df, table_name):
         "bool": "Bool",
         "datetime64[ns]": "DateTime64(3)",
         "timestamp[ns][pyarrow]": "DateTime64(3)",
+        "timestamp[us][pyarrow]": "DateTime64(6)",
         "str": "String",
         "string[pyarrow]": "String",
         "large_string[pyarrow]": "String",
