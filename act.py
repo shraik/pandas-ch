@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, timedelta
 
 from shared_module2 import loadvp3
-from shared_chouse import contc, save_file_data_ch, intoclickhouse
+from shared_chouse import contc, save_file_data_ch, intoclickhouse, check_file_data_ch
 
 
 def examples():
@@ -90,17 +90,34 @@ def ch_dict(client):
 
 
 if __name__ == "__main__":
-    db_name = "db_ilja"
+    db_name = "pandas"
     # client = contc()
 
     # client.command(f"CREATE DATABASE IF NOT EXISTS {db_name}")
 
     client = contc(db_name, hostip="192.168.5.17")
 
-    chtest2(client)
+    # chtest2(client)
     # ch_dict(client)
     save_file_data_ch(
         client, datetime.today() + timedelta(days=1), r"C:\uv\chouse\act.py"
+    )
+
+    res = check_file_data_ch(
+        # client, datetime.today() + timedelta(days=1), r"C:\uv\chouse\act.py"
+        client,
+        datetime.today() + timedelta(days=2),
+        r"C:\uv\chouse\act.py",
+    )
+    print("проверка даты файла:", res)
+
+    print(
+        "проверка даты файла2:",
+        check_file_data_ch(
+            client,
+            datetime.today(),
+            r"C:\uv\chouse\act.py",
+        ),
     )
 
     if client.ping():
