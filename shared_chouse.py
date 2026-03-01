@@ -89,14 +89,18 @@ def check_file_data_ch(
 
 
 def contc(
-    dbname="default", hostip="192.168.203.128"
-) -> clickhouse_connect.driver.client:
+    dbname="default",
+    hostip="192.168.203.128",
+    port=8123,
+    username="default",
+    password="",
+) -> clickhouse_connect.driver.httpclient.HttpClient:
     try:
         client = clickhouse_connect.get_client(
             host=hostip,
-            port=8123,
-            username="default",
-            password="",  # Your password, if any
+            port=port,
+            username=username,
+            password=password,  # Your password, if any
             database=dbname,
         )
     except DatabaseError as e:
@@ -163,20 +167,20 @@ def create_table_schema(client, df, table_name):
         "float64": "Float64",
         "Float64": "Float64",
         "double[pyarrow]": "Float64",
-        "object": "String",
+        "object": "String CODEC(LZ4)",
         "bool": "Bool",
         "datetime64[ns]": "DateTime64(3)",
         "timestamp[ns][pyarrow]": "DateTime64(3)",
         "timestamp[us][pyarrow]": "DateTime64(6)",
-        "str": "String",
-        "string[pyarrow]": "String",
-        "large_string[pyarrow]": "String",
+        "str": "String CODEC(LZ4)",
+        "string[pyarrow]": "String CODEC(LZ4)",
+        "large_string[pyarrow]": "String CODEC(LZ4)",
     }
     # dft = df.select_dtypes("str")
     # df[dft.columns] = dft.apply(lambda x: x.fillna(""))
 
     # df = df.convert_dtypes(dtype_backend="pyarrow")
-    print(df.dtypes)
+    # print(df.dtypes)
 
     columns_sql = []
     for col_name, dtype in zip(df.columns, df.dtypes):
@@ -202,7 +206,7 @@ def create_table_schema(client, df, table_name):
 
     client.command(create_table_sql)
 
-    print(f"Table '{table_name}' created with schema inferred from dataframe.")
+    # print(f"Table '{table_name}' created with schema inferred from dataframe.")
 
 
 def save_file_data_ch(client, modified, ftl, gl_dagmode=True) -> bool:

@@ -21,37 +21,6 @@ def timer(name, startTime=None):
         return startTime
 
 
-def examples():
-    """
-    хранение шаблонов
-    """
-    # df["Количество"] = df["Количество"].astype("Float64")
-
-    # dft = df.select_dtypes("str")
-    # df[dft.columns] = dft.apply(lambda x: x.fillna(""))
-
-    # dft = df.select_dtypes("number")
-    # df[dft.columns] = dft.apply(lambda x: x.fillna(0.0))
-
-    # fill_value = pd.Timestamp("1970-01-01")
-    # dft = df.select_dtypes("datetime")
-    # df[dft.columns] = dft.apply(lambda x: x.fillna(fill_value))
-
-    # print("--databases-----------------------")
-    # result = client.query("SHOW DATABASES")
-    # for row in result.result_set:
-    #     print(row[0])
-    # print("-------------------------")
-
-    # print(f"--tables in database:{db_name}-----------------------")
-    # result = client.query("SHOW TABLES")
-    # for row in result.result_set:
-    #     print(row[0])  # Print the table name from the first column of each row
-    # print("-------------------------")
-
-    return 0
-
-
 def chtest2(client):
     # 1. Read the Parquet file to infer the schema
     # df = pd.read_parquet(r"data\Сборная_план2.parquet")
@@ -135,14 +104,14 @@ def load_mol_excel(
     возвращает фрейм с найденными колонками
     """
 
-    # res = pd.read_excel(filename, dtype=str, header=header_row, engine="calamine")
-    # res2 = pd.read_excel(filename, nrows=header_row[0], engine="calamine")
+    res = pd.read_excel(filename, dtype=str, header=header_row, engine="calamine")
+    res2 = pd.read_excel(filename, nrows=header_row[0], engine="calamine")
 
+    # затычка для ускорения отладки
     # res.to_parquet("C1_in/1с-2026-02-остатки.parquet")
     # res2.to_parquet("C1_in/1с-2026-02-остатки_res2.parquet")
-
-    res = pd.read_parquet("C1_in/1с-2026-02-остатки.parquet")
-    res2 = pd.read_parquet("C1_in/1с-2026-02-остатки_res2.parquet")
+    # res = pd.read_parquet("C1_in/1с-2026-02-остатки.parquet")
+    # res2 = pd.read_parquet("C1_in/1с-2026-02-остатки_res2.parquet")
 
     # логическая матрица поиска слова во фрейме
     res3 = res2.apply(lambda col: col.str.contains("Период", na=False), axis=1)
@@ -154,18 +123,14 @@ def load_mol_excel(
         .values[0][0]
     )
 
-    # print(res.columns.to_flat_index())
-
-    res.columns = ["_".join(a) for a in res.columns.to_flat_index()]
-    res = (
-        res
-        # .dropna(axis="index", how="all")
-        .dropna(axis="columns", how="all")
-    )
+    # схлопнуть многоэтажный заголовок
+    res.columns = ["_".join(a) for a in res.columns.to_flat_index()]  # pyright: ignore[reportAttributeAccessIssue]
+    # удалить пустые колонки
+    res = res.dropna(axis="columns", how="all")
 
     lisc = res.columns.to_list()
 
-    print("Список прочитанных колонок: ", lisc)
+    print(f"Список прочитанных колонок: {lisc}, \nколичество колонок: {len(lisc)}")
     # список найденных имён колонок
     resl = []
     # дикт для переименования найденных колонок
@@ -191,112 +156,13 @@ def load_mol_excel(
     if drop_un:
         # print("/n", res.columns.to_list())
         pattern = r"_[A-z:\d{1,2} ]+"
+        print(rf"/nОчистка инени колонок по шаблону '{pattern}'")
         res = res.rename(columns=lambda x: re.sub(pattern, "", x))
         # print("/n", res.columns.to_list())
 
     res["Версия"] = res4
 
     return res
-
-
-def makeclean_mol(filename: str, allcol=False):
-    """Считывает файл остатков по МОЛ и возвращает фрейм"""
-    global gl_writer
-
-    mol_file = filename
-
-    df = load_mol_excel(
-        {
-            "Статья_Статья": "Статья",
-            "Статья_Счет": "Вид деят",
-            "Статья_Номенклатура": "Номенклатура",
-            "Статья_КСМ": "КСМ",
-            "Статья_Склад/Контрагент/Работник": "Наименование подразделения",
-            "Освоение_Количество списание": "Освоение. списание (шт)",
-            "Освоение_Количество передача в экспл.": "Освоение. передача (шт)",
-            "Освоение_Количество ввод в экспл.": "Освоение. ввод (шт)",
-            "Освоение_Итого (без НДС)": "Освоение. Сумма (без НДС)",
-            "Конечный остаток_Количество": "Остаток (шт)",
-            # "Конечный остаток_Сумма (без НДС)": "Остаток Сумма без ТЗР (без НДС)",
-            "Конечный остаток_Итого с ТЗР (без НДС)": "Остаток Сумма (без НДС)",
-        },
-        [7, 8],
-        mol_file,
-    )
-
-    df.dropna(
-        subset=["Вид деят", "Номенклатура", "Наименование подразделения"], inplace=True
-    )
-
-    # df["Расход. Сумма (без НДС)"] = df["Расход. Сумма (без НДС)"].fillna(0.0)
-
-    # mask = df["Вид деят"].str.fullmatch(r"^10.+")
-    # mask = (
-    #     df["Вид деят"].str.match("10") & ~df["Вид деят"].str.match("10.12")
-    # )
-    # df.loc[mask, "Вид деят"] = "МТР"
-
-    mask = df["Статья"].str.match("Амортизация малоценных ОС") | df["Статья"].str.match(
-        "Подготовка к вводу в эксплуатацию"
-    )
-    df.loc[mask, "Вид деят"] = "ОНСС"
-
-    df["Вид деят"] = df["Вид деят"].where(df["Вид деят"] == "ОНСС", "МТР")
-
-    # обрезка пробелов слева и справа
-    df["Наименование подразделения"] = df["Наименование подразделения"].str.strip()
-    df["Наименование подразделения"] = df["Наименование подразделения"].replace(
-        {
-            "МОЛ ЦАП": "ОАСУТП",
-            "МОЛ ЦАП УМАИТ": "ОТ",
-            "МОЛ ОТ ": "ОТ",
-            "МОЛ ОТ": "ОТ",
-            "ЦАП связь аварийный": "ОТ",
-            "МОЛ ЦАП  ИТ": "ОИТ",
-            "Оргтехника офис": "ОИТ",
-        },
-        # na_action="ignore",
-    )
-
-    df[
-        [
-            "Освоение. Сумма (без НДС)",
-            # "Расход (шт)",
-            # "Приход (шт)",
-            # "Расход. Сумма (без НДС)",
-            "Остаток (шт)",
-            # "Остаток Сумма без ТЗР (без НДС)",
-            "Остаток Сумма (без НДС)",
-        ]
-    ] = df[
-        [
-            "Освоение. Сумма (без НДС)",
-            # "Расход (шт)",
-            # "Приход (шт)",
-            # "Расход. Сумма (без НДС)",
-            "Остаток (шт)",
-            # "Остаток Сумма без ТЗР (без НДС)",
-            "Остаток Сумма (без НДС)",
-        ]
-    ].apply(pd.to_numeric, errors="coerce")
-
-    df[
-        [
-            "Освоение. Сумма (без НДС)",
-            # "Расход. Сумма (без НДС)",
-            # "Остаток Сумма без ТЗР (без НДС)",
-            "Остаток Сумма (без НДС)",
-        ]
-    ] = df[
-        [
-            "Освоение. Сумма (без НДС)",
-            # "Расход. Сумма (без НДС)",
-            # "Остаток Сумма без ТЗР (без НДС)",
-            "Остаток Сумма (без НДС)",
-        ]
-    ].multiply(0.001, axis="columns")
-
-    return df
 
 
 def find_latest_file(directory: str, pattern: str) -> str | None:
@@ -324,7 +190,6 @@ def find_latest_file(directory: str, pattern: str) -> str | None:
 
 
 def loadinit() -> configparser.ConfigParser:
-
     config = configparser.ConfigParser()
     config_file_path = "act.ini"
 
@@ -335,69 +200,44 @@ def loadinit() -> configparser.ConfigParser:
         config["DEFAULT"] = {
             "file1": r"R:\source\python\Python-xls\data\склады\2026-02-28\все мтр на_27.02.2026.xlsx",
             "file2": r"R:\source\python\Python-xls\data\склады\2026-02-28\Лист в ALVXXL01 (1).xlsx",
+            "serverip": "192.168.5.17",
         }
         with open(config_file_path, "w") as configfile:
             config.write(configfile)
     except Exception as e:
         print(f"An unexpected error occurred while reading the file: {e}")
         sys.exit(1)
+
     return config
 
 
 if __name__ == "__main__":
-    # pd.StringDtype(storage="pyarrow")
-    # string_pyarrow = pd.ArrowDtype(pa.string())
-    # string_pyarrow = pd.StringDtype("pyarrow")
-    # print(string_pyarrow)
-
+    # загрузить конфиг и проверить, что из него пришли переменные
     config_gl = loadinit()
-
-    # for key in config_gl["DEFAULT"]:
-    #     print(key)
-
-    if config_gl.has_option("DEFAULT", "file1") and config_gl.has_option(
-        "DEFAULT", "file2"
+    if (
+        config_gl.has_option("DEFAULT", "file1")
+        and config_gl.has_option("DEFAULT", "file2")
+        and config_gl.has_option("DEFAULT", "serverip")
     ):
         file_sap1 = config_gl.get("DEFAULT", "file1")
         file_sap2 = config_gl.get("DEFAULT", "file2")
+        serverip = config_gl.get("DEFAULT", "serverip")
         print(f"File1: {file_sap1}")
         print(f"file2: {file_sap2}")
+        print(f"serverip: {serverip}")
     else:
         print("Не найден ключ 'file1' или 'file2' в секции 'DEFAULT'.")
         sys.exit()
 
     db_name = "pandas"
-    # client = contc()
-    client = contc(db_name, hostip="192.168.5.17")
-
-    # filets = r"\\192.168.5.199\ilja\source\python\Python-xls\data\склады\2026-02-28\1c-file-2026-02-статья2.xlsx"
-    # df_in = makeclean_mol(filets)
-    # df_in.to_excel(r"data\loaded_f.xlsx")
-
-    # df1 = pd.read_excel(file_sap1, engine="calamine", nrows=10, dtype_backend="pyarrow")
-    # df2 = pd.read_excel(file_sap2, engine="calamine", nrows=10, dtype_backend="pyarrow")
-    # # print(df1.info())
-
-    # print(df1.columns.sort_values().to_list())
-    # print(df2.columns.sort_values().to_list())
-
-    # df1 = pd.read_excel(file_sap1, engine="calamine")
-    # df1.to_parquet("out/все мтр на_27.02.2026.parquet")
-
-    # df1 = pd.read_excel(file_sap2, engine="calamine")
-    # df1.to_parquet("out/Лист в ALVXXL01 (1).parquet")
-    # print(df1.info())
-    # sys.exit(0)
-
-    # df1["Материал"] = df1["Материал"].astype(strpy)
-    # print(pd.ArrowDtype(pa.string()))
+    client = contc(db_name, hostip=serverip)
 
     # каталоги для входных файлов
     DATA_SAP = "SAP_in"
     DATA_C1 = "C1_in"
 
     print("--выбираем файл с остатками SAP---")
-    filesap = find_latest_file(DATA_SAP, "*.parquet")
+    filesap = find_latest_file(DATA_SAP, "*.xlsx")
     print("--выбираем файл с остатками ОСВ---")
     mol_file = find_latest_file(DATA_C1, "*.xlsx")
 
@@ -406,7 +246,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     print(f"--читаем SAP файл:\n{filesap}")
-    sap_ost = pd.read_parquet(filesap)
+    sap_ost = pd.read_excel(filesap, engine="calamine")
 
     print(f"--читаем ОСВ файл:\n{mol_file}")
     c1_ost = load_mol_excel(
@@ -422,38 +262,33 @@ if __name__ == "__main__":
         only_selected=False,
         drop_un=True,
     )
-    # print(c1_ost.info())
-    # sys.exit(0)
 
+    # сбросить строки в которых не заполнен КСМ
     c1_ost = c1_ost.dropna(subset="КСМ")
-    # c1_ost["КСМ"] = c1_ost["КСМ"].astype("int32")
+    # обрезать нули слева
     c1_ost["КСМ"] = c1_ost["КСМ"].str.lstrip("0")
+
+    # сформировать ключ для слияния
     c1_ost["key"] = (
         c1_ost["Код склада SAP"] + c1_ost["КСМ"].astype("string") + c1_ost["Партия SAP"]
     )
-
-    # sap_ost["Материал"] = (
-    #     sap_ost["Материал"].astype("string")
-    #     # .convert_dtypes(dtype_backend="pyarrow")
-    # )
-
     sap_ost["key"] = (
         sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
     )
-    # print(sap_ost.info())
 
+    # слияние
     c1_ost = c1_ost.merge(sap_ost, left_on="key", right_on="key")
 
+    # вывести результат в файл
     startTime = timer(name="Начало записи в выходной файл")
     c1_ost.to_excel("out/c1_ost.xlsx", index=False)
-    timer("Настройки загружены", startTime)
+    timer("Завершена запись в выходной файл", startTime)
 
-    # df1 = pd.read_parquet("out/все мтр на_27.02.2026.parquet", dtype_backend="pyarrow")
-    # df2 = pd.read_parquet("out/Лист в ALVXXL01 (1).parquet", dtype_backend="pyarrow")
+    startTime = timer(name="Начало записи в clickhouse, таблица c1_ost")
+    c1_ost.to_excel("out/c1_ost.xlsx", index=False)
+    intoclickhouse(client, c1_ost, "c1_ost")
+    timer("Завершена запись в clickhouse", startTime)
 
-    # print(df1.info())
-    # print(df2.info())
-
-if client.ping():
-    client.close()
-    print("\nConnection to ClickHouse closed.")
+    if client.ping():
+        client.close()
+        print("\nConnection to ClickHouse closed.")
