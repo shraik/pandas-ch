@@ -7,6 +7,19 @@ from datetime import datetime, timedelta
 from shared_chouse import contc, save_file_data_ch, intoclickhouse, check_file_data_ch
 import configparser
 
+# import pyarrow as pa
+import re
+
+
+def timer(name, startTime=None):
+    """таймер"""
+    if startTime:
+        print(f"Таймер: Прошло времени для [{name}]: {datetime.now() - startTime}")
+    else:
+        startTime = datetime.now()
+        print(f"Таймер: Запущен [{name}] at {startTime}")
+        return startTime
+
 
 def examples():
     """
@@ -115,7 +128,9 @@ def test3(client):
     )
 
 
-def load_mol_excel(clumns: dict, header_row: list, filename: str) -> pd.DataFrame:
+def load_mol_excel(
+    clumns: dict, header_row: list, filename: str, only_selected=True, drop_un=False
+) -> pd.DataFrame:
     """считывает xlsx файл с поиском колонок в 2х этажном заголовке таблицы
     возвращает фрейм с найденными колонками
     """
@@ -142,6 +157,11 @@ def load_mol_excel(clumns: dict, header_row: list, filename: str) -> pd.DataFram
     # print(res.columns.to_flat_index())
 
     res.columns = ["_".join(a) for a in res.columns.to_flat_index()]
+    res = (
+        res
+        # .dropna(axis="index", how="all")
+        .dropna(axis="columns", how="all")
+    )
 
     lisc = res.columns.to_list()
 
@@ -161,11 +181,19 @@ def load_mol_excel(clumns: dict, header_row: list, filename: str) -> pd.DataFram
             print(f'\nОшибка. Не нашел колонку "{li}" в списке колонок')
             sys.exit()
 
-    res = res[resl]
+    if only_selected:
+        res = res[resl]
+
     res.rename(
         columns=renmd,
         inplace=True,
     )
+    if drop_un:
+        # print("/n", res.columns.to_list())
+        pattern = r"_[A-z:\d{1,2} ]+"
+        res = res.rename(columns=lambda x: re.sub(pattern, "", x))
+        # print("/n", res.columns.to_list())
+
     res["Версия"] = res4
 
     return res
@@ -317,6 +345,11 @@ def loadinit() -> configparser.ConfigParser:
 
 
 if __name__ == "__main__":
+    # pd.StringDtype(storage="pyarrow")
+    # string_pyarrow = pd.ArrowDtype(pa.string())
+    # string_pyarrow = pd.StringDtype("pyarrow")
+    # print(string_pyarrow)
+
     config_gl = loadinit()
 
     # for key in config_gl["DEFAULT"]:
@@ -348,11 +381,16 @@ if __name__ == "__main__":
     # print(df1.columns.sort_values().to_list())
     # print(df2.columns.sort_values().to_list())
 
-    # df1 = pd.read_excel(file_sap1, engine="calamine", dtype_backend="pyarrow")
+    # df1 = pd.read_excel(file_sap1, engine="calamine")
     # df1.to_parquet("out/все мтр на_27.02.2026.parquet")
 
-    # df1 = pd.read_excel(file_sap2, engine="calamine", dtype_backend="pyarrow")
+    # df1 = pd.read_excel(file_sap2, engine="calamine")
     # df1.to_parquet("out/Лист в ALVXXL01 (1).parquet")
+    # print(df1.info())
+    # sys.exit(0)
+
+    # df1["Материал"] = df1["Материал"].astype(strpy)
+    # print(pd.ArrowDtype(pa.string()))
 
     # каталоги для входных файлов
     DATA_SAP = "SAP_in"
@@ -365,10 +403,10 @@ if __name__ == "__main__":
 
     if not filesap or not mol_file:
         print("Не удалось найти необходимые файлы данных. Выход.")
-        sys.exit(1)
+        sys.exit(0)
 
     print(f"--читаем SAP файл:\n{filesap}")
-    sap_ost = pd.read_parquet(filesap, dtype_backend="pyarrow")
+    sap_ost = pd.read_parquet(filesap)
 
     print(f"--читаем ОСВ файл:\n{mol_file}")
     c1_ost = load_mol_excel(
@@ -381,30 +419,34 @@ if __name__ == "__main__":
         # [10, 11],
         [9, 10],
         mol_file,
+        only_selected=False,
+        drop_un=True,
     )
+    # print(c1_ost.info())
+    # sys.exit(0)
 
     c1_ost = c1_ost.dropna(subset="КСМ")
     # c1_ost["КСМ"] = c1_ost["КСМ"].astype("int32")
     c1_ost["КСМ"] = c1_ost["КСМ"].str.lstrip("0")
     c1_ost["key"] = (
-        c1_ost["Код склада SAP"]
-        + c1_ost["КСМ"].astype("string[pyarrow]")
-        + c1_ost["Партия SAP"]
+        c1_ost["Код склада SAP"] + c1_ost["КСМ"].astype("string") + c1_ost["Партия SAP"]
     )
 
-    # pd.StringDtype(storage="pyarrow")
-    sap_ost["Материал"] = (
-        sap_ost["Материал"]
-        .astype("string[pyarrow]")
-        .convert_dtypes(dtype_backend="pyarrow")
-    )
+    # sap_ost["Материал"] = (
+    #     sap_ost["Материал"].astype("string")
+    #     # .convert_dtypes(dtype_backend="pyarrow")
+    # )
 
-    print(sap_ost.info())
-    sap_ost["key"] = sap_ost["Склад"] + sap_ost["Материал"] + sap_ost["Партия"]
+    sap_ost["key"] = (
+        sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
+    )
+    # print(sap_ost.info())
 
     c1_ost = c1_ost.merge(sap_ost, left_on="key", right_on="key")
 
+    startTime = timer(name="Начало записи в выходной файл")
     c1_ost.to_excel("out/c1_ost.xlsx", index=False)
+    timer("Настройки загружены", startTime)
 
     # df1 = pd.read_parquet("out/все мтр на_27.02.2026.parquet", dtype_backend="pyarrow")
     # df2 = pd.read_parquet("out/Лист в ALVXXL01 (1).parquet", dtype_backend="pyarrow")
