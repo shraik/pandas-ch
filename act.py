@@ -214,6 +214,7 @@ def loadinit() -> configparser.ConfigParser:
 if __name__ == "__main__":
     # загрузить конфиг и проверить, что из него пришли переменные
     config_gl = loadinit()
+
     if (
         config_gl.has_option("DEFAULT", "file1")
         and config_gl.has_option("DEFAULT", "file2")
@@ -230,7 +231,7 @@ if __name__ == "__main__":
         sys.exit()
 
     db_name = "pandas"
-    client = contc(db_name, hostip=serverip)
+    client = contc(db_name, hostip=serverip, port=80)
 
     # каталоги для входных файлов
     DATA_SAP = "SAP_in"
@@ -284,8 +285,10 @@ if __name__ == "__main__":
     c1_ost.to_excel("out/c1_ost.xlsx", index=False)
     timer("Завершена запись в выходной файл", startTime)
 
+    c1_ost = pd.read_parquet("out/c1_ost.parquet")
     startTime = timer(name="Начало записи в clickhouse, таблица c1_ost")
-    c1_ost.to_excel("out/c1_ost.xlsx", index=False)
+
+    print(c1_ost.info())
     intoclickhouse(client, c1_ost, "c1_ost")
     timer("Завершена запись в clickhouse", startTime)
 
