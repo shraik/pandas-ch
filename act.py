@@ -154,11 +154,9 @@ def load_mol_excel(
         inplace=True,
     )
     if drop_un:
-        # print("/n", res.columns.to_list())
         pattern = r"_[A-z:\d{1,2} ]+"
-        print(rf"/nОчистка инени колонок по шаблону '{pattern}'")
+        print("\n", rf"Очистка имени колонок по шаблону '{pattern}'")
         res = res.rename(columns=lambda x: re.sub(pattern, "", x))
-        # print("/n", res.columns.to_list())
 
     res["Версия"] = res4
 
@@ -201,6 +199,7 @@ def loadinit() -> configparser.ConfigParser:
             "file1": r"R:\source\python\Python-xls\data\склады\2026-02-28\все мтр на_27.02.2026.xlsx",
             "file2": r"R:\source\python\Python-xls\data\склады\2026-02-28\Лист в ALVXXL01 (1).xlsx",
             "serverip": "192.168.5.17",
+            "port": "80",
         }
         with open(config_file_path, "w") as configfile:
             config.write(configfile)
@@ -219,19 +218,22 @@ if __name__ == "__main__":
         config_gl.has_option("DEFAULT", "file1")
         and config_gl.has_option("DEFAULT", "file2")
         and config_gl.has_option("DEFAULT", "serverip")
+        and config_gl.has_option("DEFAULT", "port")
     ):
         file_sap1 = config_gl.get("DEFAULT", "file1")
         file_sap2 = config_gl.get("DEFAULT", "file2")
         serverip = config_gl.get("DEFAULT", "serverip")
+        serverport = config_gl.get("DEFAULT", "port")
         print(f"File1: {file_sap1}")
         print(f"file2: {file_sap2}")
         print(f"serverip: {serverip}")
+        print(f"serverip: {serverport}")
     else:
-        print("Не найден ключ 'file1' или 'file2' в секции 'DEFAULT'.")
+        print("Не найден ключ 'file1'/'file2'/'serverip'/'port' в секции 'DEFAULT'.")
         sys.exit()
 
     db_name = "pandas"
-    client = contc(db_name, hostip=serverip, port=80)
+    client = contc(db_name, hostip=serverip, port=int(serverport))
 
     # каталоги для входных файлов
     DATA_SAP = "SAP_in"
@@ -281,14 +283,14 @@ if __name__ == "__main__":
     c1_ost = c1_ost.merge(sap_ost, left_on="key", right_on="key")
 
     # вывести результат в файл
+    print("Датафрейм для записи в выходной файл:")
+    print(c1_ost.info())
+
     startTime = timer(name="Начало записи в выходной файл")
     c1_ost.to_excel("out/c1_ost.xlsx", index=False)
     timer("Завершена запись в выходной файл", startTime)
 
-    c1_ost = pd.read_parquet("out/c1_ost.parquet")
     startTime = timer(name="Начало записи в clickhouse, таблица c1_ost")
-
-    print(c1_ost.info())
     intoclickhouse(client, c1_ost, "c1_ost")
     timer("Завершена запись в clickhouse", startTime)
 
