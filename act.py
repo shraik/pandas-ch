@@ -1,14 +1,14 @@
 import pandas as pd
 from pathlib import Path
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # from shared_module2 import check_df
 from shared_chouse import (
     contc,
-    save_file_data_ch,
+    # save_file_data_ch,
     intoclickhouse,
-    check_file_data_ch,
+    # check_file_data_ch,
     load_ch,
 )
 import configparser
@@ -396,7 +396,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     table.reset_index(inplace=True)
 
     table.to_excel(gl_writer, sheet_name="Сводная", index=False)
-    workbook.get_worksheet_by_name("Сводная").autofit()
+    workbook.get_worksheet_by_name("Сводная").autofit() # type: ignore
 
 
 if __name__ == "__main__":
@@ -461,7 +461,7 @@ if __name__ == "__main__":
     if client.ping():
         client.close()
         print("\nConnection to ClickHouse closed.")
-
+    
     if gl_writer is not None:
         startTime = timer(name=f"Закрытие выходного файла: '{repfile}'")
         gl_writer.close()
