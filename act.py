@@ -266,6 +266,10 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     """
     global gl_writer
 
+    # проверка и создание выходного каталога
+    folder_path = Path(pathtofile).parents[0]
+    folder_path.mkdir(parents=True, exist_ok=True)
+
     gl_writer = pd.ExcelWriter(
         pathtofile,
         mode="w",
@@ -396,7 +400,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     table.reset_index(inplace=True)
 
     table.to_excel(gl_writer, sheet_name="Сводная", index=False)
-    workbook.get_worksheet_by_name("Сводная").autofit() # type: ignore
+    workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
 
 
 if __name__ == "__main__":
@@ -421,23 +425,23 @@ if __name__ == "__main__":
     DATA_SAP = "SAP_in"
     DATA_C1 = "C1_in"
 
-    # c1_ost, mol_file = extract(DATA_SAP, DATA_C1)
+    c1_ost, mol_file = extract(DATA_SAP, DATA_C1)
 
-    # startTime = timer(name="Начало записи в выходной файл")
-    # c1_ost.to_excel(
-    #     "out/" + Path(mol_file).stem + ".xlsx", index=False, engine="xlsxwriter"
-    # )
-    # timer("Завершена запись в выходной файл", startTime)
+    startTime = timer(name="Начало записи в выходной файл")
+    c1_ost.to_excel(
+        "out/" + Path(mol_file).stem + ".xlsx", index=False, engine="xlsxwriter"
+    )
+    timer("Завершена запись в выходной файл", startTime)
 
-    # startTime = timer(name="Начало записи в clickhouse, таблица c1_ost")
-    # intoclickhouse(
-    #     client,
-    #     c1_ost,
-    #     "c1_ost",
-    #     append=False,
-    #     dropc="Версия2",
-    # )
-    # timer("Завершена запись в clickhouse", startTime)
+    startTime = timer(name="Начало записи в clickhouse, таблица c1_ost")
+    intoclickhouse(
+        client,
+        c1_ost,
+        "c1_ost",
+        append=False,
+        dropc="Версия2",
+    )
+    timer("Завершена запись в clickhouse", startTime)
 
     print("\n===============Чтение из clickhouse====================")
     startTime = timer(name="Читаем из clickhouse, таблицу c1_ost")
@@ -461,7 +465,7 @@ if __name__ == "__main__":
     if client.ping():
         client.close()
         print("\nConnection to ClickHouse closed.")
-    
+
     if gl_writer is not None:
         startTime = timer(name=f"Закрытие выходного файла: '{repfile}'")
         gl_writer.close()
