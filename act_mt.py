@@ -15,8 +15,9 @@ import configparser
 
 # import pyarrow as pa
 import re
+from joblib import Parallel, delayed
 
-gl_writer = None
+gl_writer: pd.ExcelWriter
 
 
 def timer(name, startTime=None):
@@ -190,23 +191,27 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
     return ldf
 
 
-def extract(DATA_SAP: str, DATA_C1: str) -> tuple[pd.DataFrame, str]:
-    # каталоги для входных файлов
-
+def func1(DATA_SAP) -> pd.DataFrame:
+    """Для использования с joblib. Загрузка файла SAP"""
     print("--выбираем файл с остатками SAP---")
     filesap = find_latest_file(DATA_SAP, "*.xlsx")
+
+    print(f"--читаем SAP файл:\n{filesap}")
+    return pd.read_excel(filesap, engine="calamine")
+
+
+def func2(DATA_C1) -> tuple[pd.DataFrame, str]:
+    """Для использования с joblib. Загрузка файла ОСВ"""
     print("--выбираем файл с остатками ОСВ---")
     mol_file = find_latest_file(DATA_C1, "*.xlsx")
 
-    if not filesap or not mol_file:
+    print(f"--читаем ОСВ файл:\n{mol_file}")
+
+    if not mol_file:
         print("Не удалось найти необходимые файлы данных. Выход.")
         sys.exit(0)
 
-    print(f"--читаем SAP файл:\n{filesap}")
-    sap_ost = pd.read_excel(filesap, engine="calamine")
-
-    print(f"--читаем ОСВ файл:\n{mol_file}")
-    c1_ost = load_mol_excel(
+    return load_mol_excel(
         {
             "Счет_": "Счет",
             "КСМ_": "КСМ",
@@ -217,7 +222,39 @@ def extract(DATA_SAP: str, DATA_C1: str) -> tuple[pd.DataFrame, str]:
         mol_file,
         only_selected=False,
         drop_un=True,
-    )
+    ), mol_file
+
+
+# def extract(DATA_SAP: str, DATA_C1: str) -> tuple[pd.DataFrame, str]:
+def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
+
+    # каталоги для входных файлов
+
+    # print("--выбираем файл с остатками SAP---")
+    # filesap = find_latest_file(DATA_SAP, "*.xlsx")
+    # print("--выбираем файл с остатками ОСВ---")
+    # mol_file = find_latest_file(DATA_C1, "*.xlsx")
+
+    # if not filesap or not mol_file:
+    #     print("Не удалось найти необходимые файлы данных. Выход.")
+    #     sys.exit(0)
+
+    # print(f"--читаем SAP файл:\n{filesap}")
+    # sap_ost = pd.read_excel(filesap, engine="calamine")
+
+    # print(f"--читаем ОСВ файл:\n{mol_file}")
+    # c1_ost = load_mol_excel(
+    #     {
+    #         "Счет_": "Счет",
+    #         "КСМ_": "КСМ",
+    #         "Код склада SAP_": "Код склада SAP",
+    #         "Партия SAP_": "Партия SAP",
+    #     },
+    #     [9, 10],
+    #     mol_file,
+    #     only_selected=False,
+    #     drop_un=True,
+    # )
 
     # сбросить строки в которых не заполнен КСМ
     c1_ost = c1_ost.dropna(subset="КСМ")
@@ -253,7 +290,20 @@ def extract(DATA_SAP: str, DATA_C1: str) -> tuple[pd.DataFrame, str]:
     print("Датафрейм для записи в выходной файл:")
     print(c1_ost.info())
 
-    return c1_ost, mol_file
+    # return c1_ost, mol_file
+    return c1_ost
+
+
+def initexcel(pathtofile: str):
+    writer = pd.ExcelWriter(
+        pathtofile,
+        mode="w",
+        engine="xlsxwriter",
+        date_format="dd/mm/yyyy",
+        datetime_format="dd/mm/yyyy",
+        # engine_kwargs={"options": {"strings_to_urls": True}},
+    )
+    return writer
 
 
 def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
@@ -270,17 +320,9 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     folder_path = Path(pathtofile).parents[0]
     folder_path.mkdir(parents=True, exist_ok=True)
 
-    gl_writer = pd.ExcelWriter(
-        pathtofile,
-        mode="w",
-        engine="xlsxwriter",
-        date_format="dd/mm/yyyy",
-        datetime_format="dd/mm/yyyy",
-        # engine_kwargs={"options": {"strings_to_urls": True}},
-    )
     workbook = gl_writer.book
-    workbook.add_worksheet("base")
-    workbook.add_worksheet("filter")
+    workbook.add_worksheet("base")  # pyright: ignore[reportAttributeAccessIssue]
+    workbook.add_worksheet("filter")  # pyright: ignore[reportAttributeAccessIssue]
     # workbook.add_worksheet("Суммы")
 
     goodlist = [
@@ -425,12 +467,24 @@ if __name__ == "__main__":
     DATA_SAP = "SAP_in"
     DATA_C1 = "C1_in"
 
-    c1_ost, mol_file = extract(DATA_SAP, DATA_C1)
+    startTime = timer(name="Начало чтения входных файлов")
+
+    tasks = [
+        delayed(func1)(DATA_SAP),
+        delayed(func2)(DATA_C1),
+    ]
+    results = Parallel(n_jobs=-1)(tasks)
+    timer("Чтение завершено.", startTime)
+
+    # sys.exit(0)
+
+    c1_ost = extract(results[0], results[1][0])
+    mol_file = results[1][1]
 
     startTime = timer(name="Начало записи в выходной файл")
-    c1_ost.to_excel(
-        "out/" + Path(mol_file).stem + ".xlsx", index=False, engine="xlsxwriter"
-    )
+    gl_writer = initexcel("out/" + Path(mol_file).stem + ".xlsx")
+    c1_ost.to_excel(gl_writer, index=False, engine="xlsxwriter")
+    gl_writer.close()
     timer("Завершена запись в выходной файл", startTime)
 
     startTime = timer(name="Начало записи в clickhouse, таблица c1_ost")
@@ -456,6 +510,7 @@ if __name__ == "__main__":
     # print(c2_df.dtypes)
 
     repfile = "out/report.xlsx"
+    gl_writer = initexcel(repfile)
 
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
