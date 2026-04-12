@@ -2,6 +2,7 @@ import pandas as pd
 from pathlib import Path
 import sys
 from datetime import datetime
+import toml
 
 # from shared_module2 import check_df
 from shared_chouse import (
@@ -10,6 +11,8 @@ from shared_chouse import (
     intoclickhouse,
     # check_file_data_ch,
     load_ch,
+    load_mol_сh,
+    timer,
 )
 import configparser
 
@@ -18,16 +21,6 @@ import re
 from joblib import Parallel, delayed
 
 gl_writer: pd.ExcelWriter
-
-
-def timer(name, startTime=None):
-    """таймер"""
-    if startTime:
-        print(f"Таймер: Прошло времени для [{name}]: {datetime.now() - startTime}")
-    else:
-        startTime = datetime.now()
-        print(f"Таймер: Запущен [{name}] at {startTime}")
-        return startTime
 
 
 def load_mol_excel(
@@ -445,7 +438,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
 
 
-if __name__ == "__main__":
+def test_parallel():
     Main_startTime = timer(name="============Запуск скрипта===============")
     # загрузить конфиг и проверить, что из него пришли переменные
     config_gl = loadinit()
@@ -461,7 +454,7 @@ if __name__ == "__main__":
         print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
         sys.exit()
 
-    db_name = "pandas"
+    db_name = "db_pandas"
     client = contc(db_name, hostip=serverip, port=int(serverport))
 
     DATA_SAP = "SAP_in"
@@ -527,3 +520,109 @@ if __name__ == "__main__":
         timer(f"Закрытие выходного файла: '{repfile}'", startTime)
 
     timer("Итого времени выполнения скрипта", Main_startTime)
+
+
+def testtoml():
+    data = {
+        "table": [
+            "остатки_1с",
+            "остатки_1с",
+            "остатки_1с",
+        ],
+        "column_name_in": [
+            "Счет",
+            "Наименование",
+            "Стоимость",
+        ],
+        "column_type_in": [
+            "int",
+            "str",
+            "Float64",
+        ],
+        "req": [
+            False,
+            True,
+            True,
+        ],
+        "rename_to": ["Счет_1с", None, ""],
+        "column_type_out": ["str", "", ""],
+        "descr": ["номер счета", "наименование ТМЦ", "стоимость без НДС"],
+    }
+
+    df = pd.DataFrame(data)
+
+    print(df)
+    print(df.dtypes)
+
+    # 1. Convert DataFrame to a list of dictionaries (records)
+    # This creates a "list of tables" structure in TOML
+    datar = {"users": df.to_dict(orient="records")}
+
+    # 2. Write to a .toml file
+    with open("data.toml", "w", encoding="utf-8") as f:
+        toml.dump(datar, f)
+
+    data_ff = toml.load("data.toml")
+    df2 = pd.DataFrame(data_ff["users"])
+
+    print(df2)
+    print(df2.dtypes)
+
+
+def transform_1c(client, table1: str, table2: str):
+    """Пример функции для трансформации данных в Clickhouse. Чтение из одной таблицы, запись в другую"""
+    df = load_ch(client, table1)
+    # пример трансформации данных
+    df["Новая колонка"] = df["Счет"].astype(str) + "_" + df["Наименование"]
+    intoclickhouse(client, df, table2, append=False)
+
+
+if __name__ == "__main__":
+    print(
+        "================================================================Запуск скрипта===="
+    )
+
+    config_gl = loadinit()
+
+    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
+        "DEFAULT", "port"
+    ):
+        serverip = config_gl.get("DEFAULT", "serverip")
+        serverport = config_gl.get("DEFAULT", "port")
+        print(f"serverip: {serverip}")
+        print(f"serverip: {serverport}")
+    else:
+        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
+        sys.exit()
+
+    db_name = "db_pandas"
+    client = contc(db_name, hostip=serverip, port=int(serverport))
+    tablename = "c1_ost_raw"
+    Main_startTime = timer(name="Запуск загрузки")
+
+    # закинуть выгрузку из 1С в Clickhouse без преобразований.
+    # df_raw = pd.read_excel("C1_in/1с-2026-02-test.xlsx", engine="calamine")
+    # intoclickhouse(client, df_raw, tablename, append=False)
+
+    df_raw_c = load_ch(client, tablename)
+    # print(df_raw_c)
+
+    res = load_mol_сh(
+        client,
+        {
+            "Счет_": "Счет",
+            "КСМ_": "КСМ",
+            "Код склада SAP_": "Код склада SAP",
+            "Партия SAP_": "Партия SAP",
+        },
+        # [9, 10],
+        [8, 9],
+        tablename,
+        only_selected=False,
+        drop_un=True,
+    )
+
+    # print(res)
+    intoclickhouse(client, res, "c1_ost_flat")
+    timer("Итого времени выполнения скрипта", Main_startTime)
+    res.to_excel("out/1с-2026-02-test_flat.xlsx", index=False, engine="xlsxwriter")

@@ -1,0 +1,27 @@
+[[users]]
+table = "остатки_1с"
+column_name_in = "Счет"
+column_type_in = "int"
+req = false
+rename_to = "Счет_1с"
+column_type_out = "str"
+descr = "номер счета"
+
+[[users]]
+table = "остатки_1с"
+column_name_in = "Наименование"
+column_type_in = "str"
+req = true
+rename_to = nan
+column_type_out = ""
+descr = "наименование ТМЦ"
+
+[[users]]
+table = "остатки_1с"
+column_name_in = "Стоимость"
+column_type_in = "Float64"
+req = true
+rename_to = ""
+column_type_out = ""
+descr = "стоимость без НДС"
+

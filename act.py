@@ -264,7 +264,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
         dfl (pd.DataFrame): датафрейм
         toch (bool, optional): Флаг записи в БД. Defaults to False.
     """
-    global gl_writer
+    global gl_writer, gl_format0
 
     # проверка и создание выходного каталога
     folder_path = Path(pathtofile).parents[0]
@@ -281,7 +281,10 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     workbook = gl_writer.book
     workbook.add_worksheet("base")
     workbook.add_worksheet("filter")
+    workbook.add_worksheet("Сводная")
+
     # workbook.add_worksheet("Суммы")
+    gl_format0 = gl_writer.book.add_format({"num_format": "#,##0;-#,##0;-"})
 
     goodlist = [
         "Счет",
@@ -321,6 +324,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     dfl_s = dfl[goodlist]
 
     # записать в excel выборку колонок
+    # запись полной выборки
     dfl_s.to_excel(gl_writer, sheet_name="base", index=False)
 
     # фильтр по "Наименование подразделения"
@@ -361,6 +365,30 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     dfl_s[empty_f] = dfl_s[empty_f].replace(0.0, pd.NA)
     dfl_s = dfl_s.dropna(subset=empty_f, axis="index", how="all")
 
+    # Создание нового столбца "Подразделение"
+    dfl_s["Подразделение"] = dfl_s["Склад / Контрагент / Работник"].str.strip()
+    # Сопоставление "Статья_Склад/Контрагент/Работник" с наименованием Подразделения
+
+    mask = ~dfl_s["Наименование подразделения"].isna()
+    dfl_s.loc[mask, "Подразделение"] = dfl_s["Наименование подразделения"]
+
+    dfl_s["Подразделение"] = dfl_s["Подразделение"].replace(
+        {
+            "МОЛ ЦАП": "ОАСУТП",
+            "МОЛ ЦАП УМАИТ": "ОТ",
+            "МОЛ ОТ ": "ОТ",
+            "МОЛ ОТ": "ОТ",
+            "ЦАП связь аварийный": "ОТ",
+            "МОЛ ЦАП  ИТ": "ОИТ",
+            "Оргтехника офис": "ОИТ",
+            "Отдел автоматизированных систем управления технологическим процессом": "ОАСУТП",
+            "Управление метрологии, автоматизации и информационных технологий и телекоммуникаций (не использовать)": "ОАСУТП",
+            "Отдел телекоммуникаций": "ОТ",
+            "Отдел информационных технологий": "ОИТ",
+        },
+        # na_action="ignore",
+    )
+
     # print("==na==")
     # print(dfl_s[dfl_s["Склад / Контрагент / Работник"] == "МОЛ ЦАП"][empty_f])
 
@@ -382,7 +410,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     param_ind = [
         "Вид деят 1с",
         "Склад / Контрагент / Работник",
-        "ФИО менеджера",
+        "Подразделение",
         "Наименование категории запаса",
     ]
 
@@ -396,32 +424,41 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
         aggfunc="sum",
     )
 
+    # вывод сводной в виде таблицы со стилями
+    # перевод индексов в колонки
     table = table.reindex(param_sum, axis=1)
     table.reset_index(inplace=True)
 
-    table.to_excel(gl_writer, sheet_name="Сводная", index=False)
+    namet = "Table" + "Сводная"
+    # формирование строки заголовка и настройка стиля вывода
+    column_settings = [
+        {"header": column, "total_function": "sum", "format": gl_format0}
+        for column in table.columns
+    ]
+
+    # подготовка данных для заполнения таблицы
+    # rows = [[i for i in row] for row in table.itertuples(index=False)]
+    # print(rows)
+    # print(table.values)
+    # print(table.values.tolist())
+    gl_writer.book.get_worksheet_by_name("Сводная").add_table(  # pyright: ignore[reportOptionalMemberAccess]
+        0,
+        0,
+        0 + len(table.index) + 1,
+        0 + table.shape[1] - 1,
+        {
+            "data": table.values,
+            "columns": column_settings,
+            "style": "Table Style Medium 9",
+            "name": namet,
+            "total_row": True,
+        },
+    )
+    # форматирование таблицы по ширине содержимого
     workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
 
 
-if __name__ == "__main__":
-    Main_startTime = timer(name="============Запуск скрипта===============")
-    # загрузить конфиг и проверить, что из него пришли переменные
-    config_gl = loadinit()
-
-    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
-        "DEFAULT", "port"
-    ):
-        serverip = config_gl.get("DEFAULT", "serverip")
-        serverport = config_gl.get("DEFAULT", "port")
-        print(f"serverip: {serverip}")
-        print(f"serverip: {serverport}")
-    else:
-        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
-        sys.exit()
-
-    db_name = "pandas"
-    client = contc(db_name, hostip=serverip, port=int(serverport))
-
+def loaddata():
     DATA_SAP = "SAP_in"
     DATA_C1 = "C1_in"
 
@@ -443,6 +480,28 @@ if __name__ == "__main__":
     )
     timer("Завершена запись в clickhouse", startTime)
 
+
+if __name__ == "__main__":
+    Main_startTime = timer(name="============Запуск скрипта===============")
+    # загрузить конфиг и проверить, что из него пришли переменные
+    config_gl = loadinit()
+
+    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
+        "DEFAULT", "port"
+    ):
+        serverip = config_gl.get("DEFAULT", "serverip")
+        serverport = config_gl.get("DEFAULT", "port")
+        print(f"serverip: {serverip}")
+        print(f"serverip: {serverport}")
+    else:
+        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
+        sys.exit()
+
+    db_name = "db_pandas"
+    client = contc(db_name, hostip=serverip, port=int(serverport))
+
+    loaddata()
+
     print("\n===============Чтение из clickhouse====================")
     startTime = timer(name="Читаем из clickhouse, таблицу c1_ost")
     # c2_df = load_ch(client, "c1_ost")
@@ -455,10 +514,9 @@ if __name__ == "__main__":
     # print("====")
     # print(c2_df.dtypes)
 
-    repfile = "out/report.xlsx"
-
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
+    repfile = "out/report.xlsx"
     report(repfile, c2_df, toch=True)
     timer("Формирование выборки", startTime)
 

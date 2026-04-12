@@ -1,14 +1,13 @@
-
 def examples():
     """
-    хранение примеров
+    С…СЂР°РЅРµРЅРёРµ РїСЂРёРјРµСЂРѕРІ
     """
     # pd.StringDtype(storage="pyarrow")
     # string_pyarrow = pd.ArrowDtype(pa.string())
     # string_pyarrow = pd.StringDtype("pyarrow")
     # print(string_pyarrow)
 
-    # df["Количество"] = df["Количество"].astype("Float64")
+    # df["РљРѕР»РёС‡РµСЃС‚РІРѕ"] = df["РљРѕР»РёС‡РµСЃС‚РІРѕ"].astype("Float64")
 
     # dft = df.select_dtypes("str")
     # df[dft.columns] = dft.apply(lambda x: x.fillna(""))
@@ -32,5 +31,11 @@ def examples():
     #     print(row[0])  # Print the table name from the first column of each row
     # print("-------------------------")
 
-    return 0
+    # РІР°СЂРёР°РЅС‚ СЃ С„РѕСЂРјРёСЂРѕРІР°РЅРёРµРј РјСѓР»СЊС‚РёРёРЅРґРµРєСЃР°
+    # df_new = df_raw_c.copy()
+    # df_new.columns = pd.MultiIndex.from_frame(
+    #     df_raw_c.iloc[header_row].T.ffill(axis="index")
+    # )
+    # df_new = df_new.drop(df_raw_c.index[: max(header_row) + 1]).reset_index(drop=True)
 
+    return 0

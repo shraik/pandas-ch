@@ -4,6 +4,7 @@ from clickhouse_connect.driver.exceptions import DatabaseError
 import pandas as pd
 import sys
 from datetime import datetime
+import re
 
 # from os import environ as int_env
 # from sqlalchemy import inspect
@@ -54,6 +55,26 @@ from datetime import datetime
 #     return True
 
 
+def timer(name: str, startTime=None):
+    """_summary_
+
+    Args:
+        name (str): Наименование таймера для вывода на консоль.
+        startTime (datetime, optional): Время запуска. Defaults to None.
+
+    Returns:
+        datetime: Время запуска или время прошедшее с полученной даты запуска
+    """
+    if startTime:
+        elapsedt = datetime.now() - startTime
+        print(f"Таймер: Прошло времени для [{name}]: {elapsedt}")
+        return elapsedt
+    else:
+        startTime = datetime.now()
+        print(f"Таймер: Запущен [{name}] at {startTime}")
+        return startTime
+
+
 def check_file_data_ch(
     client: clickhouse_connect.driver.client,  # type: ignore
     modified: datetime,
@@ -95,6 +116,18 @@ def load_ch(
     table_name: str,
     filter=None,
 ) -> pd.DataFrame:
+    """Загрузить данные из clickhouse в датафрейм. Если указать фильтр, то загрузятся только данные по фильтру.
+    Возвращает датафрейм с данными из clickhouse.
+
+    Args:
+        client (clickhouse_connect.driver.client): Соединение к clickhouse
+        table_name (str): имя таблицы
+
+        filter (str, optional): Строка фильтра. Defaults to None.
+
+    Returns:
+        pd.DataFrame: Считанный датафрейм с данными из clickhouse.
+    """
 
     # проверка существования таблицы
     result = client.command(f"EXISTS {table_name}")
@@ -153,14 +186,17 @@ def contc(
     return client
 
 
-def intoclickhouse(client, df: pd.DataFrame, table_name, append=False, dropc=""):
+def intoclickhouse(client, df: pd.DataFrame, table_name: str, append=False, dropc=""):
     """Записать датафрейм в clickhouse.
     Если в БД будет существовать таблица с таким имененем, она будет перезаписна.
+    Нераспознанные типы, для хранения преобразуются в 'str'.
 
     Args:
         client (_type_): соединение к clickhouse
-        df (_type_): датафрейм для записи в clickhouse
-        table_name (_type_): имя таблицы в clickhouse
+        df (pd.DataFrame): датафрейм для записи в clickhouse
+        table_name (str): имя таблицы в clickhouse
+        append(bool): признак добавления к таблице. Отключается очистка и создание схемы.
+        dropc(str): колонка для очистки. Из нее выбирается минимальная и максимальная дата по входным данным и удаляется из БД перед вставкой.
     """
     if append is False:
         create_table_schema(client, df, table_name)
@@ -184,12 +220,16 @@ def intoclickhouse(client, df: pd.DataFrame, table_name, append=False, dropc="")
             break
 
     if backend_np:
+        cols_str = df.select_dtypes(include="object").columns
+        df[cols_str] = df[cols_str].astype("str")
         df2 = df.convert_dtypes(dtype_backend="pyarrow")
         client.insert_df_arrow(table_name, df2)
     else:
         client.insert_df_arrow(table_name, df)
 
-    print(f"Data from dataframe inserted into clickhouse table '{table_name}'.")
+    print(
+        f"intoclickhouse. Data from dataframe inserted into clickhouse table '{table_name}'."
+    )
 
 
 def create_table_schema(client, df, table_name):
@@ -201,15 +241,15 @@ def create_table_schema(client, df, table_name):
         "float64": "Nullable(Float64)",
         "Float64": "Nullable(Float64)",
         "double[pyarrow]": "Nullable(Float64)",
-        "object": "String CODEC(LZ4)",
+        "object": "Nullable(String) CODEC(LZ4)",
         "bool": "Bool",
         "datetime64[ns]": "DateTime64(3)",
         "timestamp[ns][pyarrow]": "DateTime64(3)",
         "timestamp[us][pyarrow]": "DateTime64(6)",
         "datetime64[us]": "DateTime64(6)",
-        "str": "String CODEC(LZ4)",
-        "string[pyarrow]": "String CODEC(LZ4)",
-        "large_string[pyarrow]": "String CODEC(LZ4)",
+        "str": "Nullable(String) CODEC(LZ4)",
+        "string[pyarrow]": "Nullable(String) CODEC(LZ4)",
+        "large_string[pyarrow]": "Nullable(String) CODEC(LZ4)",
     }
     # dft = df.select_dtypes("str")
     # df[dft.columns] = dft.apply(lambda x: x.fillna(""))
@@ -222,7 +262,7 @@ def create_table_schema(client, df, table_name):
     columns_sql = []
     for col_name, dtype in zip(df.columns, df.dtypes):
         ch_type = dtype_mapping.get(
-            str(dtype), "String"
+            str(dtype), "Nullable(String) CODEC(LZ4)"
         )  # Default to String if not found
         columns_sql.append(f"`{col_name}` {ch_type}")
 
@@ -297,6 +337,117 @@ def save_file_data_ch(client, modified, ftl, gl_dagmode=True) -> bool:
         client.command(f"TRUNCATE TABLE {table_name}")
         client.insert_df_arrow(table_name, conf_df)
     return True
+
+
+def load_mol_сh(
+    client: clickhouse_connect.driver.client,
+    clumns: dict,
+    header_row: list,
+    table_name: str,
+    only_selected=True,
+    drop_un=False,
+) -> pd.DataFrame:
+    """Cчитывает таблицу из clickhouse.
+    Формирует наименования колонок из 2х указанных строк.
+    удаляет дубликаты колонк с сохранением первой.
+    Возвращает фрейм с найденными колонками
+
+    Args:
+        client (clickhouse_connect.driver.client): Клиент clickhouse
+        clumns (dict): Словарь для фильтрации и переименования колонок.
+        header_row (list): Список строк для формирования наименования колонок. Нумерация с 0.
+        table_name (str): имя таблицы в clickhouse
+        only_selected (bool, optional): Вернуть только выбранные колонки. Defaults to True.
+        drop_un (bool, optional): Убрать из наименования колонок шаблон Unnamed + удалить дубликаты колонок если они получатся.
+
+    Returns:
+        pd.Dataframe: Считанный и преобразованный датафрейм
+    """
+    fname = "load_mol_сh"
+    print(
+        f"{fname}. Загрузка из Clickhouse. Таблица {table_name}. Только выбранные колонки: {only_selected}"
+    )
+
+    df_raw_c = load_ch(client, table_name)
+
+    # копируем первые строки для поиска даты, перед трансформацией
+    res2 = df_raw_c.head(header_row[0]).copy()
+
+    # готовим наименования колонок
+    # выбираем строки заголовка, транспонируем заполняем вниз дырки предыдущим значением
+    summ = df_raw_c.iloc[header_row].T.ffill(axis="index")
+
+    # суммируем колонки в серию для заголовка
+    # для второй строки заголока для первых пустых значений добавляем Unnamed +индекс+ _level_1
+
+    rs = (
+        summ.iloc[:, 0]
+        + "_"
+        + summ.iloc[:, 1].fillna(
+            "Unnamed: " + (summ.iloc[:, 1].isna().cumsum()).astype(str) + "_level_1"
+        )
+    )
+
+    df_raw_c.columns = rs
+    # сбросить первые строки в таблице до конца заголовка
+    df_raw_c = df_raw_c.drop(df_raw_c.index[: max(header_row) + 1]).reset_index(
+        drop=True
+    )
+
+    res = df_raw_c
+
+    # логическая матрица поиска слова во фрейме
+    res3 = res2.apply(lambda col: col.str.contains("Период", na=False), axis=1)
+    # удалить пустые строки и колонки, взять первое значение
+    res4 = (
+        res2[res3]
+        .dropna(axis="index", how="all")
+        .dropna(axis="columns", how="all")
+        .values[0][0]
+    )
+
+    # удалить пустые колонки
+    # res = res.dropna(axis="columns", how="all")
+
+    lisc = res.columns.to_list()
+
+    print(
+        f"{fname}. Список прочитанных колонок: {lisc}, \nколичество колонок: {len(lisc)}"
+    )
+    # список найденных имён колонок
+    resl = []
+    # дикт для переименования найденных колонок
+    renmd = {}
+
+    for li in clumns:
+        dfit = next((x for x in lisc if x.find(li) > -1), "Not found")
+        if dfit != "Not found":
+            resl.append(dfit)
+            renmd[dfit] = clumns[li]
+        else:
+            # print(f'Ошибка. Не нашел колонку "{li}" в списке колонок: {lisc} ')
+            print(f'\nОшибка. Не нашел колонку "{li}" в списке колонок')
+            sys.exit()
+
+    if only_selected:
+        res = res[resl]
+
+    res.rename(
+        columns=renmd,
+        inplace=True,
+    )
+    # sys.exit(0)
+    if drop_un:
+        pattern = r"_[A-z:\d{1,2} ]+"
+        print(f"{fname}. Очистка имени колонок по шаблону '{pattern}'")
+        res = res.rename(columns=lambda x: re.sub(pattern, "", x))
+        # сбросить дубликаты колонок по именам, сохранив первую
+        res = res.loc[:, ~res.columns.duplicated()]
+
+    res["Версия"] = res4
+    res["Версия2"] = pd.to_datetime(str(res4).strip()[-10:], format="%d.%m.%Y")
+
+    return res
 
 
 # ----------start--------------
