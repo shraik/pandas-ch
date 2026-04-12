@@ -1,26 +1,127 @@
 import pandas as pd
+import re
 from pathlib import Path
 import sys
-from datetime import datetime
-import toml
-
-# from shared_module2 import check_df
 from shared_chouse import (
     contc,
     # save_file_data_ch,
     intoclickhouse,
     # check_file_data_ch,
     load_ch,
-    load_mol_сh,
+    # load_mol_сh,
     timer,
 )
 import configparser
-
-
-import re
 from joblib import Parallel, delayed
 
+
+def initexcel(pathtofile: str):
+    writer = pd.ExcelWriter(
+        pathtofile,
+        mode="w",
+        engine="xlsxwriter",
+        date_format="dd/mm/yyyy",
+        datetime_format="dd/mm/yyyy",
+        # engine_kwargs={"options": {"strings_to_urls": True}},
+    )
+    return writer
+
+
 gl_writer: pd.ExcelWriter
+
+
+def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
+
+    ldf["ЗапасМен"] = ldf["ЗапасМен"].astype("str")
+
+    # набор колонок для перобразования в числовой тип
+    to_digit = [
+        "Начальный остаток_Количество",
+        "Начальный остаток_Сумма (без НДС)",
+        "Начальный остаток_в т.ч. сумма доп. расходов",
+        "Начальный остаток_Сумма ТЗР",
+        "Начальный остаток_Цена (средняя)",
+        "Начальный остаток_Итого с ТЗР (без НДС)",
+        "Закупка_Количество",
+        "Закупка_Сумма (без НДС)",
+        "Закупка_Сумма ТЗР",
+        "Закупка_Цена (средняя)",
+        "Закупка_Итого с ТЗР (без НДС)",
+        "Приход_Количество",
+        "Приход_Сумма (без НДС)",
+        "Приход_в т.ч. сумма доп. расходов",
+        "Освоение_Количество",
+        "Освоение_Сумма (без НДС)",
+        "Освоение_Сумма ТЗР",
+        "Освоение_Итого с ТЗР (без НДС)",
+        "Расход_Количество",
+        "Расход_Сумма (без НДС)",
+        "Расход_в т.ч. сумма доп. расходов",
+        "Конечный остаток_Количество",
+        "Конечный остаток_Сумма (без НДС)",
+        "Конечный остаток_в т.ч. сумма доп. расходов",
+        "Конечный остаток_Сумма ТЗР",
+        "Конечный остаток_Цена (средняя)",
+        "Конечный остаток_Итого с ТЗР (без НДС)",
+    ]
+    ldf[to_digit] = ldf[to_digit].apply(
+        pd.to_numeric, downcast="integer", errors="coerce"
+    )
+
+    # ldf[to_digit] = ldf[to_digit].replace(0.0, pd.NA)
+
+    return ldf
+
+
+def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
+
+    # сбросить строки в которых не заполнен КСМ
+    c1_ost = c1_ost.dropna(subset="КСМ")
+
+    # обрезать нули слева
+    c1_ost["КСМ"] = c1_ost["КСМ"].str.lstrip("0")
+
+    # сформировать ключ для слияния
+    c1_ost["key"] = (
+        c1_ost["Код склада SAP"] + c1_ost["КСМ"].astype("string") + c1_ost["Партия SAP"]
+    )
+    sap_ost["key"] = (
+        sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
+    )
+
+    # слияние
+    c1_ost = pd.merge(
+        left=c1_ost, right=sap_ost, how="left", left_on="key", right_on="key"
+    )
+
+    # преобразовать типы данных
+    c1_ost = make_clean(c1_ost)
+
+    # c1_ost["Счет"] = c1_ost["Счет"].astype("str")
+    # сформировать маску и всё по маске в МТР, остальное в ОНСС
+    mask = c1_ost["Счет"].str.match("10") & ~c1_ost["Счет"].str.match("10.12")
+    c1_ost.loc[mask, "Вид деят 1с"] = "МТР"
+    c1_ost["Вид деят 1с"] = c1_ost["Вид деят 1с"].where(
+        c1_ost["Вид деят 1с"] == "МТР", "ОНСС"
+    )
+
+    mask = c1_ost["Наименование подразделения"].isna()
+
+    c1_ost.loc[mask, "Наименование подразделения"] = c1_ost[
+        "Склад / Контрагент / Работник"
+    ]
+
+    mask = c1_ost["Наименование категории запаса"].isna()
+    c1_ost.loc[mask, "Наименование категории запаса"] = (
+        "Запасы под потребность текущего периода"
+    )
+
+    # вывести результат в файл
+    print("Датафрейм для записи в выходной файл:")
+    print(c1_ost.info())
+
+    # return c1_ost, mol_file
+    return c1_ost
 
 
 def load_mol_excel(
@@ -105,7 +206,7 @@ def find_latest_file(directory: str, pattern: str) -> str | None:
 
         latest_file = max(files, key=lambda p: p.stat().st_mtime)
         print(
-            f"Найден самый новый файл по шаблону '{pattern}' в каталоге '{directory}':\n{latest_file}"
+            f"Найден самый новый файл по шаблону '{pattern}' в каталоге '{directory}':\n{str(Path(latest_file).resolve())}"
         )
         return str(latest_file)
     except FileNotFoundError:
@@ -139,52 +240,7 @@ def loadinit() -> configparser.ConfigParser:
     return config
 
 
-def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
-
-    ldf["ЗапасМен"] = ldf["ЗапасМен"].astype("str")
-
-    # набор колонок для перобразования в числовой тип
-    to_digit = [
-        "Начальный остаток_Количество",
-        "Начальный остаток_Сумма (без НДС)",
-        "Начальный остаток_в т.ч. сумма доп. расходов",
-        "Начальный остаток_Сумма ТЗР",
-        "Начальный остаток_Цена (средняя)",
-        "Начальный остаток_Итого с ТЗР (без НДС)",
-        "Закупка_Количество",
-        "Закупка_Сумма (без НДС)",
-        "Закупка_Сумма ТЗР",
-        "Закупка_Цена (средняя)",
-        "Закупка_Итого с ТЗР (без НДС)",
-        "Приход_Количество",
-        "Приход_Сумма (без НДС)",
-        "Приход_в т.ч. сумма доп. расходов",
-        "Освоение_Количество",
-        "Освоение_Сумма (без НДС)",
-        "Освоение_Сумма ТЗР",
-        "Освоение_Итого с ТЗР (без НДС)",
-        "Расход_Количество",
-        "Расход_Сумма (без НДС)",
-        "Расход_в т.ч. сумма доп. расходов",
-        "Конечный остаток_Количество",
-        "Конечный остаток_Сумма (без НДС)",
-        "Конечный остаток_в т.ч. сумма доп. расходов",
-        "Конечный остаток_Сумма ТЗР",
-        "Конечный остаток_Цена (средняя)",
-        "Конечный остаток_Итого с ТЗР (без НДС)",
-    ]
-    ldf[to_digit] = ldf[to_digit].apply(
-        pd.to_numeric, downcast="integer", errors="coerce"
-    )
-
-    # ldf[to_digit] = ldf[to_digit].replace(0.0, pd.NA)
-    # print(ldf["Начальный остаток_Количество"])
-    # print(ldf["Начальный остаток_Количество"].dtypes)
-
-    return ldf
-
-
-def func1(DATA_SAP) -> pd.DataFrame:
+def pdread_sap(DATA_SAP) -> pd.DataFrame:
     """Для использования с joblib. Загрузка файла SAP"""
     print("--выбираем файл с остатками SAP---")
     filesap = find_latest_file(DATA_SAP, "*.xlsx")
@@ -193,7 +249,7 @@ def func1(DATA_SAP) -> pd.DataFrame:
     return pd.read_excel(filesap, engine="calamine")
 
 
-def func2(DATA_C1) -> tuple[pd.DataFrame, str]:
+def pdread_c1(DATA_C1) -> tuple[pd.DataFrame, str]:
     """Для использования с joblib. Загрузка файла ОСВ"""
     print("--выбираем файл с остатками ОСВ---")
     mol_file = find_latest_file(DATA_C1, "*.xlsx")
@@ -218,88 +274,106 @@ def func2(DATA_C1) -> tuple[pd.DataFrame, str]:
     ), mol_file
 
 
-# def extract(DATA_SAP: str, DATA_C1: str) -> tuple[pd.DataFrame, str]:
-def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
+def start_parellel():
+    global gl_writer
+    global gl_client
 
-    # каталоги для входных файлов
+    # load = False
+    load = True
 
-    # print("--выбираем файл с остатками SAP---")
-    # filesap = find_latest_file(DATA_SAP, "*.xlsx")
-    # print("--выбираем файл с остатками ОСВ---")
-    # mol_file = find_latest_file(DATA_C1, "*.xlsx")
+    Main_startTime = timer(name="============Запуск скрипта===============")
 
-    # if not filesap or not mol_file:
-    #     print("Не удалось найти необходимые файлы данных. Выход.")
-    #     sys.exit(0)
+    # загрузить конфиг и проверить, что из него пришли переменные
+    config_gl = loadinit()
 
-    # print(f"--читаем SAP файл:\n{filesap}")
-    # sap_ost = pd.read_excel(filesap, engine="calamine")
+    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
+        "DEFAULT", "port"
+    ):
+        serverip = config_gl.get("DEFAULT", "serverip")
+        serverport = config_gl.get("DEFAULT", "port")
+        print(f"serverip: {serverip}")
+        print(f"serverip: {serverport}")
+    else:
+        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
+        sys.exit()
 
-    # print(f"--читаем ОСВ файл:\n{mol_file}")
-    # c1_ost = load_mol_excel(
-    #     {
-    #         "Счет_": "Счет",
-    #         "КСМ_": "КСМ",
-    #         "Код склада SAP_": "Код склада SAP",
-    #         "Партия SAP_": "Партия SAP",
-    #     },
-    #     [9, 10],
-    #     mol_file,
-    #     only_selected=False,
-    #     drop_un=True,
-    # )
+    db_name = "db_pandas"
+    gl_client = contc(db_name, hostip=serverip, port=int(serverport))
 
-    # сбросить строки в которых не заполнен КСМ
-    c1_ost = c1_ost.dropna(subset="КСМ")
+    DATA_SAP = "SAP_in"
+    DATA_C1 = "C1_in"
 
-    # обрезать нули слева
-    c1_ost["КСМ"] = c1_ost["КСМ"].str.lstrip("0")
+    if load:
+        startTime = timer(name="Начало чтения входных файлов")
 
-    # сформировать ключ для слияния
-    c1_ost["key"] = (
-        c1_ost["Код склада SAP"] + c1_ost["КСМ"].astype("string") + c1_ost["Партия SAP"]
-    )
-    sap_ost["key"] = (
-        sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
-    )
+        tasks = [
+            delayed(pdread_sap)(DATA_SAP),
+            delayed(pdread_c1)(DATA_C1),
+        ]
+        results = Parallel(n_jobs=-1)(tasks)
+        timer("Чтение завершено.", startTime)
 
-    # слияние
-    c1_ost = pd.merge(
-        left=c1_ost, right=sap_ost, how="left", left_on="key", right_on="key"
-    )
+        # sys.exit(0)
 
-    # преобразовать типы данных
-    c1_ost = make_clean(c1_ost)
+        c1_ost = extract(results[0], results[1][0])  # type: ignore
+        # mol_file = results[1][1]  # type: ignore
 
-    # c1_ost["Счет"] = c1_ost["Счет"].astype("str")
-    # сформировать маску и всё по маске в МТР, остальное в ОНСС
-    mask = c1_ost["Счет"].str.match("10") & ~c1_ost["Счет"].str.match("10.12")
-    c1_ost.loc[mask, "Вид деят 1с"] = "МТР"
-    c1_ost["Вид деят 1с"] = c1_ost["Вид деят 1с"].where(
-        c1_ost["Вид деят 1с"] == "МТР", "ОНСС"
-    )
+        # startTime = timer(name="Начало записи промежуточного файла")
+        # filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
+        # tmp_writer = initexcel(filenametosave)
+        # c1_ost.to_excel(
+        #     tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
+        # )
+        # c1_ost.dtypes.to_excel(
+        #     tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
+        # )
+        # tmp_writer.close()
+        # timer("Завершена запись в промежуточный файл", startTime)
+        # print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
 
-    # вывести результат в файл
-    print("Датафрейм для записи в выходной файл:")
-    print(c1_ost.info())
+        startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
+        intoclickhouse(
+            gl_client,
+            c1_ost,
+            "c1_sap_ost_flat",
+            append=False,
+            # dropc="Версия2",
+        )
+        timer("Завершена запись в clickhouse", startTime)
 
-    # return c1_ost, mol_file
-    return c1_ost
+    print("\n===============Чтение из clickhouse====================")
+    startTime = timer(name="Читаем из clickhouse, таблицу c1_ost")
+
+    # c2_df = load_ch(gl_client, "c1_sap_ost_flat", "\"Версия2\"='2026-02-28'")
+    c2_df = load_ch(gl_client, "c1_sap_ost_flat")
+    timer("Читаем из clickhouse, таблицу c1_sap_ost_flat", startTime)
+
+    # print(c2_df)
+    print("====считанная таблица====")
+    print(c2_df.info())
+    # print("====")
+    # print(c2_df.dtypes)
+
+    repfile = "out/report.xlsx"
+    gl_writer = initexcel(repfile)
+
+    startTime = timer(name="Формирование выборки")
+    # формирование выходного файла
+    report(repfile, c2_df, toch=True, client=gl_client)
+    timer("Формирование выборки", startTime)
+
+    if gl_client.ping():
+        gl_client.close()
+        print("\nConnection to ClickHouse closed.")
+
+    if gl_writer is not None:
+        gl_writer.close()
+
+    print(f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'")
+    timer("Итого времени выполнения скрипта", Main_startTime)
 
 
-def initexcel(pathtofile: str):
-    writer = pd.ExcelWriter(
-        pathtofile,
-        mode="w",
-        engine="xlsxwriter",
-        date_format="dd/mm/yyyy",
-        datetime_format="dd/mm/yyyy",
-        # engine_kwargs={"options": {"strings_to_urls": True}},
-    )
-    return writer
-
-
-def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
+def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     """Формирование выходного отчета. Запись промежуточной таблицы в Clickhouse
 
     Args:
@@ -414,12 +488,18 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
         "Конечный остаток_Сумма (без НДС)",
         "Конечный остаток_Итого с ТЗР (без НДС)",
     ]
+    dfl_s[param_sum] = dfl_s[param_sum].fillna(0.0)
     param_ind = [
         "Вид деят 1с",
         "Склад / Контрагент / Работник",
-        "ФИО менеджера",
+        # "ФИО менеджера",
+        "Наименование подразделения",
         "Наименование категории запаса",
     ]
+    # заполнить пустые значения в "Наименование категории запаса" (из 1с) на "Запасы под потребность текущего периода"
+    dfl_s["Наименование категории запаса"] = dfl_s[
+        "Наименование категории запаса"
+    ].fillna("Запасы под потребность текущего периода")
 
     # свертка по подразделениям
     table = pd.pivot_table(
@@ -429,6 +509,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
         index=param_ind,
         # "pivot_ind": ["Наименование подразделения", "Вид деят"],
         aggfunc="sum",
+        # dropna=False,
     )
 
     table = table.reindex(param_sum, axis=1)
@@ -438,191 +519,8 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False):
     workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
 
 
-def test_parallel():
-    Main_startTime = timer(name="============Запуск скрипта===============")
-    # загрузить конфиг и проверить, что из него пришли переменные
-    config_gl = loadinit()
-
-    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
-        "DEFAULT", "port"
-    ):
-        serverip = config_gl.get("DEFAULT", "serverip")
-        serverport = config_gl.get("DEFAULT", "port")
-        print(f"serverip: {serverip}")
-        print(f"serverip: {serverport}")
-    else:
-        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
-        sys.exit()
-
-    db_name = "db_pandas"
-    client = contc(db_name, hostip=serverip, port=int(serverport))
-
-    DATA_SAP = "SAP_in"
-    DATA_C1 = "C1_in"
-
-    startTime = timer(name="Начало чтения входных файлов")
-
-    tasks = [
-        delayed(func1)(DATA_SAP),
-        delayed(func2)(DATA_C1),
-    ]
-    results = Parallel(n_jobs=-1)(tasks)
-    timer("Чтение завершено.", startTime)
-
-    # sys.exit(0)
-
-    c1_ost = extract(results[0], results[1][0])
-    mol_file = results[1][1]
-
-    startTime = timer(name="Начало записи в выходной файл")
-    gl_writer = initexcel("out/" + Path(mol_file).stem + ".xlsx")
-    c1_ost.to_excel(gl_writer, index=False, engine="xlsxwriter")
-    gl_writer.close()
-    timer("Завершена запись в выходной файл", startTime)
-
-    startTime = timer(name="Начало записи в clickhouse, таблица c1_ost")
-    intoclickhouse(
-        client,
-        c1_ost,
-        "c1_ost",
-        append=False,
-        dropc="Версия2",
-    )
-    timer("Завершена запись в clickhouse", startTime)
-
-    print("\n===============Чтение из clickhouse====================")
-    startTime = timer(name="Читаем из clickhouse, таблицу c1_ost")
-    # c2_df = load_ch(client, "c1_ost")
-    c2_df = load_ch(client, "c1_ost", "\"Версия2\"='2026-02-28'")
-    timer("Читаем из clickhouse, таблицу c1_ost", startTime)
-
-    # print(c2_df)
-    print("====считанная таблица====")
-    print(c2_df.info())
-    # print("====")
-    # print(c2_df.dtypes)
-
-    repfile = "out/report.xlsx"
-    gl_writer = initexcel(repfile)
-
-    startTime = timer(name="Формирование выборки")
-    # формирование выходного файла
-    report(repfile, c2_df, toch=True)
-    timer("Формирование выборки", startTime)
-
-    if client.ping():
-        client.close()
-        print("\nConnection to ClickHouse closed.")
-
-    if gl_writer is not None:
-        startTime = timer(name=f"Закрытие выходного файла: '{repfile}'")
-        gl_writer.close()
-        timer(f"Закрытие выходного файла: '{repfile}'", startTime)
-
-    timer("Итого времени выполнения скрипта", Main_startTime)
-
-
-def testtoml():
-    data = {
-        "table": [
-            "остатки_1с",
-            "остатки_1с",
-            "остатки_1с",
-        ],
-        "column_name_in": [
-            "Счет",
-            "Наименование",
-            "Стоимость",
-        ],
-        "column_type_in": [
-            "int",
-            "str",
-            "Float64",
-        ],
-        "req": [
-            False,
-            True,
-            True,
-        ],
-        "rename_to": ["Счет_1с", None, ""],
-        "column_type_out": ["str", "", ""],
-        "descr": ["номер счета", "наименование ТМЦ", "стоимость без НДС"],
-    }
-
-    df = pd.DataFrame(data)
-
-    print(df)
-    print(df.dtypes)
-
-    # 1. Convert DataFrame to a list of dictionaries (records)
-    # This creates a "list of tables" structure in TOML
-    datar = {"users": df.to_dict(orient="records")}
-
-    # 2. Write to a .toml file
-    with open("data.toml", "w", encoding="utf-8") as f:
-        toml.dump(datar, f)
-
-    data_ff = toml.load("data.toml")
-    df2 = pd.DataFrame(data_ff["users"])
-
-    print(df2)
-    print(df2.dtypes)
-
-
-def transform_1c(client, table1: str, table2: str):
-    """Пример функции для трансформации данных в Clickhouse. Чтение из одной таблицы, запись в другую"""
-    df = load_ch(client, table1)
-    # пример трансформации данных
-    df["Новая колонка"] = df["Счет"].astype(str) + "_" + df["Наименование"]
-    intoclickhouse(client, df, table2, append=False)
-
-
 if __name__ == "__main__":
     print(
         "================================================================Запуск скрипта===="
     )
-
-    config_gl = loadinit()
-
-    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
-        "DEFAULT", "port"
-    ):
-        serverip = config_gl.get("DEFAULT", "serverip")
-        serverport = config_gl.get("DEFAULT", "port")
-        print(f"serverip: {serverip}")
-        print(f"serverip: {serverport}")
-    else:
-        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
-        sys.exit()
-
-    db_name = "db_pandas"
-    client = contc(db_name, hostip=serverip, port=int(serverport))
-    tablename = "c1_ost_raw"
-    Main_startTime = timer(name="Запуск загрузки")
-
-    # закинуть выгрузку из 1С в Clickhouse без преобразований.
-    # df_raw = pd.read_excel("C1_in/1с-2026-02-test.xlsx", engine="calamine")
-    # intoclickhouse(client, df_raw, tablename, append=False)
-
-    df_raw_c = load_ch(client, tablename)
-    # print(df_raw_c)
-
-    res = load_mol_сh(
-        client,
-        {
-            "Счет_": "Счет",
-            "КСМ_": "КСМ",
-            "Код склада SAP_": "Код склада SAP",
-            "Партия SAP_": "Партия SAP",
-        },
-        # [9, 10],
-        [8, 9],
-        tablename,
-        only_selected=False,
-        drop_un=True,
-    )
-
-    # print(res)
-    intoclickhouse(client, res, "c1_ost_flat")
-    timer("Итого времени выполнения скрипта", Main_startTime)
-    res.to_excel("out/1с-2026-02-test_flat.xlsx", index=False, engine="xlsxwriter")
+    start_parellel()
