@@ -2,6 +2,8 @@ import pandas as pd
 import re
 from pathlib import Path
 import sys
+
+from xlsxwriter import workbook
 from shared_chouse import (
     contc,
     # save_file_data_ch,
@@ -13,6 +15,13 @@ from shared_chouse import (
 )
 import configparser
 from joblib import Parallel, delayed
+
+
+gl_writer: pd.ExcelWriter
+gl_link_format = None
+gl_format1 = None
+gl_format0 = None
+gl_back_addr = {}
 
 
 def initexcel(pathtofile: str):
@@ -27,7 +36,23 @@ def initexcel(pathtofile: str):
     return writer
 
 
-gl_writer: pd.ExcelWriter
+def hyperlink(param):
+    # добавление гиперссылок назад на листы
+    wsts = param["writer"].book.worksheets()
+    for sheet in wsts:
+        sn = sheet.get_name()
+        if sn[:5] in param["префиксл"]:
+            sheet.write_url(
+                "A1",
+                "internal:'"
+                + gl_back_addr.get(sn + "_p", param["страница"])
+                + "'!"
+                + gl_back_addr[sn],
+                string=gl_back_addr.get(sn + "_p", param["страница"]),
+            )
+
+        else:
+            continue
 
 
 def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
@@ -110,6 +135,26 @@ def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
     c1_ost.loc[mask, "Наименование подразделения"] = c1_ost[
         "Склад / Контрагент / Работник"
     ]
+
+    c1_ost["Наименование подразделения"] = (
+        c1_ost["Наименование подразделения"]
+        .str.strip()
+        .replace(
+            {
+                "МОЛ ЦАП": "ОАСУТП",
+                "Отдел автоматизированных систем управления технологическим процессом": "ОАСУТП",
+                "Управление метрологии, автоматизации и информационных технологий и телекоммуникаций (не использовать)": "ОАСУТП",
+                "МОЛ ЦАП УМАИТ": "ОТ",
+                "МОЛ ОТ": "ОТ",
+                "Отдел телекоммуникаций": "ОТ",
+                "ЦАП связь аварийный": "ОТ",
+                "МОЛ ЦАП  ИТ": "ОИТ",
+                "Отдел информационных технологий": "ОИТ",
+                "Оргтехника офис": "ОИТ",
+            },
+            # na_action="ignore",
+        )
+    )
 
     mask = c1_ost["Наименование категории запаса"].isna()
     c1_ost.loc[mask, "Наименование категории запаса"] = (
@@ -364,13 +409,177 @@ def start_parellel():
 
     if gl_client.ping():
         gl_client.close()
-        print("\nConnection to ClickHouse closed.")
+        # print("\nConnection to ClickHouse closed.")
 
     if gl_writer is not None:
         gl_writer.close()
 
     print(f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'")
     timer("Итого времени выполнения скрипта", Main_startTime)
+
+
+def toe(mol_pd: pd.DataFrame, param: dict) -> int:
+    """
+    формирование сводной таблицы и вывод в excel файл с расшифровками по уровням.
+    Перечень параметров:
+    params = {
+        "writer": gl_writer,
+        "страница": "Суммы",
+        "начстрока": downrows,
+        "начколонка": 0,
+        "pivot_ind": ["Наименование подразделения", "Вид деят"],
+        "pivot_sum": ["Расход. Сумма (без НДС)", "Остаток (без НДС)"],
+        #параметр display - перечень колонок для вывода в отчет. Если будет пустой выведет все колонки.
+        "display": [
+            "Наименование подразделения",
+            "Вид деят",
+            "Расход (шт)",
+            "Расход. Сумма (без НДС)",
+            "Остаток (шт)",
+            "Остаток (без НДС)",
+        ],
+        "префиксл": "Расх",
+        "tablename": "итог",  # имя добавляемой таблицы
+        "linkcol": "Наименование подразделения",  # колонка для которой делать гиперссылки
+    }
+    Возвращает высоту выведённой таблицы
+    """
+    global gl_format1, gl_link_format, gl_back_addr
+    # счетчик страниц для уникальности ссылок
+    sh_count = 0
+
+    # проверить что страница для вывода существует, если нет - создать
+    worksheet = param["writer"].book.get_worksheet_by_name(param["страница"])
+    if worksheet is None:
+        worksheet = param["writer"].book.add_worksheet(param["страница"])
+
+    # свертка по параметрам из словаря, формирование сводной
+    table = pd.pivot_table(
+        mol_pd,
+        values=param["pivot_sum"],
+        # "pivot_sum": ["Расход. Сумма (без НДС)", "Остаток (без НДС)"],
+        index=param["pivot_ind"],
+        # "pivot_ind": ["Наименование подразделения", "Вид деят"],
+        aggfunc="sum",
+    )
+
+    # переиндексация для сохранения порядка колонок в сводной, сброс индекса для вывода в виде таблицы
+    table = table.reindex(param["pivot_sum"], axis=1)
+    table.reset_index(inplace=True)
+
+    # формирование таблицы итогов
+    itogt = pd.pivot_table(
+        table,
+        values=param["pivot_sum"],
+        # index=param["pivot_ind"][0],
+        index=param["pivot_ind"][:2],
+        aggfunc="sum",
+    ).reindex(param["pivot_sum"], axis=1)
+    # itogt
+    itogt.reset_index(inplace=True)
+
+    for row in table.itertuples():
+        # dff = mol_pd[
+        #     (mol_pd[param["pivot_ind"][0]] == row[1])
+        #     & (mol_pd[param["pivot_ind"][1]] == row[2])
+        # ]
+
+        ffilter = mol_pd[param["pivot_ind"][0]] == row[1]
+        for mm in range(1, len(param["pivot_ind"])):
+            ffilter = ffilter & (mol_pd[param["pivot_ind"][mm]] == row[mm + 1])
+
+        # dff = mol_pd[ffilter]
+        if param.get("display", None):
+            dff = mol_pd[param["display"]]
+        else:
+            dff = mol_pd[ffilter]
+
+        # sheetname = param["префиксл"] + "_" + str(row[1]) + "_" + str(row[2])
+        sheetname = param["префиксл"] + "_" + str(sh_count)
+        sh_count += 1
+        # удалить пустые колонки из расшифровок
+        dff = dff.dropna(axis="columns", how="all")
+        dff.to_excel(
+            param["writer"],
+            sheet_name=sheetname,
+            index=False,
+        )
+
+        wsl = gl_writer.book.get_worksheet_by_name(sheetname)  # type: ignore
+        wsl.set_column(3, 4, 18, gl_format1)  # type: ignore
+        wsl.autofit()  # type: ignore
+
+        table.at[row.Index, param["pivot_ind"][0]] = (
+            "=HYPERLINK(\"#'"
+            + sheetname
+            + '\'!A1", "'
+            + str(row[1]).replace('"', '""')
+            + '")'
+        )
+        gl_back_addr[sheetname] = chr(ord("A") + param["начколонка"]) + str(
+            param["начстрока"] + row[0] + 2
+        )
+
+    namet = "Table" + param["префиксл"]
+    # column_settings = [{"header": column} for column in table.columns]
+
+    # формирование шаблона вывода для колонок, установка итоговой функции суммирования
+    # для колонки с ссылками отдельный формат синим и без функции итога
+    column_settings = [
+        {"header": column, "total_function": "sum", "format": gl_format0}
+        if column
+        != param.get("linkcol", "--строка которая не попадется в наименованиях--")
+        else {"header": column, "format": gl_link_format}
+        for column in table.columns
+    ]
+
+    worksheet.add_table(
+        param["начстрока"],
+        param["начколонка"],
+        param["начстрока"] + len(table.index) + 1,
+        param["начколонка"] + table.shape[1] - 1,
+        {
+            "data": table.values,
+            "columns": column_settings,
+            "style": "Table Style Medium 9",
+            "name": namet,
+            "total_row": True,
+        },
+    )
+
+    param["writer"].book.get_worksheet_by_name(param["страница"]).write_string(
+        param["начстрока"] + len(table.index) + 2,
+        param["начколонка"] + table.shape[1] - itogt.shape[1],
+        "Итоги: ",
+    )
+
+    column_settings = [
+        {"header": column, "total_function": "sum", "format": gl_format0}
+        for column in itogt.columns
+    ]
+
+    worksheet.add_table(
+        param["начстрока"] + len(table.index) + 3,
+        param["начколонка"] + table.shape[1] - itogt.shape[1],
+        param["начстрока"] + len(table.index) + 3 + len(itogt.index) + 1,
+        param["начколонка"] + table.shape[1] - itogt.shape[1] + itogt.shape[1] - 1,
+        {
+            "data": itogt.values,
+            "columns": column_settings,
+            "style": "Table Style Medium 9",
+            "name": namet + "total",
+            "total_row": True,
+        },
+    )
+    # itogt.to_excel(
+    #     param["writer"],
+    #     sheet_name=param["страница"],
+    #     startrow=param["начстрока"] + len(table.index) + 3,
+    #     startcol=param["начколонка"] + table.shape[1] - itogt.shape[1],
+    #     index=False,
+    # )
+
+    return len(table.index) + len(itogt.index) + 3
 
 
 def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
@@ -381,7 +590,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
         dfl (pd.DataFrame): датафрейм
         toch (bool, optional): Флаг записи в БД. Defaults to False.
     """
-    global gl_writer
+    global gl_writer, gl_format0, gl_format1, gl_link_format
 
     # проверка и создание выходного каталога
     folder_path = Path(pathtofile).parents[0]
@@ -391,6 +600,12 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     workbook.add_worksheet("base")  # pyright: ignore[reportAttributeAccessIssue]
     workbook.add_worksheet("filter")  # pyright: ignore[reportAttributeAccessIssue]
     # workbook.add_worksheet("Суммы")
+    gl_format1 = gl_writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})  # type: ignore
+    gl_format0 = gl_writer.book.add_format({"num_format": "#,##0;-#,##0;-"})  # type: ignore
+
+    gl_link_format = gl_writer.book.get_default_url_format()  # type: ignore
+    gl_link_format.set_align("center")
+    gl_link_format.set_bold()
 
     goodlist = [
         "Счет",
@@ -430,7 +645,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     dfl_s = dfl[goodlist]
 
     # записать в excel выборку колонок
-    dfl_s.to_excel(gl_writer, sheet_name="base", index=False)
+    # dfl_s.to_excel(gl_writer, sheet_name="base", index=False)
 
     # фильтр по "Наименование подразделения"
     podr_sap = [
@@ -438,7 +653,11 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
         "Отдел телекоммуникаций",
         "Отдел информационных технологий",
         "Управление метрологии, автоматизации и информационных технологий и телекоммуникаций (не использовать)",
+        "ОАСУТП",
+        "ОТ",
+        "ОИТ",
     ]
+
     # выборка складов МОЛ "Склад / Контрагент / Работник"
     mol_1c = [
         "МОЛ ЦАП",
@@ -452,23 +671,23 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     ]
 
     # сбросить пустые строки по набору столбцов
-    empty_f = [
-        "Начальный остаток_Количество",
-        "Приход_Количество",
-        "Приход_Сумма (без НДС)",
-        "Приход_в т.ч. сумма доп. расходов",
-        "Расход_Количество",
-        "Расход_Сумма (без НДС)",
-        "Расход_в т.ч. сумма доп. расходов",
-        "Конечный остаток_Количество",
-        "Конечный остаток_Сумма (без НДС)",
-        "Конечный остаток_в т.ч. сумма доп. расходов",
-        "Конечный остаток_Сумма ТЗР",
-        "Конечный остаток_Цена (средняя)",
-        "Конечный остаток_Итого с ТЗР (без НДС)",
-    ]
-    dfl_s[empty_f] = dfl_s[empty_f].replace(0.0, pd.NA)
-    dfl_s = dfl_s.dropna(subset=empty_f, axis="index", how="all")
+    # empty_f = [
+    #     "Начальный остаток_Количество",
+    #     "Приход_Количество",
+    #     "Приход_Сумма (без НДС)",
+    #     "Приход_в т.ч. сумма доп. расходов",
+    #     "Расход_Количество",
+    #     "Расход_Сумма (без НДС)",
+    #     "Расход_в т.ч. сумма доп. расходов",
+    #     "Конечный остаток_Количество",
+    #     "Конечный остаток_Сумма (без НДС)",
+    #     "Конечный остаток_в т.ч. сумма доп. расходов",
+    #     "Конечный остаток_Сумма ТЗР",
+    #     "Конечный остаток_Цена (средняя)",
+    #     "Конечный остаток_Итого с ТЗР (без НДС)",
+    # ]
+    # dfl_s[empty_f] = dfl_s[empty_f].replace(0.0, pd.NA)
+    # dfl_s = dfl_s.dropna(subset=empty_f, axis="index", how="all")
 
     # print("==na==")
     # print(dfl_s[dfl_s["Склад / Контрагент / Работник"] == "МОЛ ЦАП"][empty_f])
@@ -490,10 +709,10 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     ]
     dfl_s[param_sum] = dfl_s[param_sum].fillna(0.0)
     param_ind = [
+        "Наименование подразделения",
         "Вид деят 1с",
         "Склад / Контрагент / Работник",
         # "ФИО менеджера",
-        "Наименование подразделения",
         "Наименование категории запаса",
     ]
     # заполнить пустые значения в "Наименование категории запаса" (из 1с) на "Запасы под потребность текущего периода"
@@ -517,6 +736,24 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
 
     table.to_excel(gl_writer, sheet_name="Сводная", index=False)
     workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
+
+    params = {
+        "writer": gl_writer,
+        "страница": "Суммы",
+        "начстрока": 0,
+        "начколонка": 0,
+        "pivot_ind": param_ind,
+        "pivot_sum": param_sum,
+        "префиксл": "Расх",
+        "linkcol": "Наименование подразделения",
+    }
+
+    # вывод таблиц с расшифровками
+    toe(dfl_s, params)
+
+    # расстановка обратных ссылок на листы с расшифровкой
+    params["префиксл"] = ["Расх_"]
+    hyperlink(params)
 
 
 if __name__ == "__main__":
