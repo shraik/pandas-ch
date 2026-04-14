@@ -115,13 +115,9 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
     return ldf
 
 
-def lost_row(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
-    res = sap_ost
-
-    return res
-
-
-def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
+def extract(
+    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # сбросить строки в которых не заполнен КСМ
     c1_ost = c1_ost.dropna(subset="КСМ")
@@ -144,7 +140,6 @@ def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
         how="left",
         left_on="key",
         right_on="key",
-        indicator=True,
     )
 
     # преобразовать типы данных
@@ -193,8 +188,9 @@ def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
     print("Датафрейм для записи в выходной файл:")
     print(c1_ost.info())
 
-    # return c1_ost, mol_file
-    return c1_ost
+    lost = sap_ost[~sap_ost["key"].isin(c1_ost["key"])]
+
+    return c1_ost, lost
 
 
 def load_mol_excel(
@@ -387,29 +383,34 @@ def start_parellel():
         timer("Чтение завершено.", startTime)
 
         # sys.exit(0)
-
-        c1_ost = extract(results[0], results[1][0])  # type: ignore
-
-        # поиск строк не найденных в 1С
-        # lostrows = lost_row(results[0], results[1][0])  # type: ignore
+        # +поиск строк не найденных в 1С
+        c1_ost, lostrows = extract(results[0], results[1][0])  # type: ignore
 
         mol_file = results[1][1]  # type: ignore
 
         startTime = timer(name="Начало записи промежуточного файла")
         filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
         tmp_writer = initexcel(filenametosave)
-        # c1_ost.to_excel(
-        #     tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
-        # )
-        # c1_ost.dtypes.to_excel(
-        #     tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
-        # )
+        c1_ost.to_excel(
+            tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
+        )
+        c1_ost.dtypes.to_excel(
+            tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
+        )
+        lostrows.to_excel(
+            tmp_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
+        )
+        lostrows.dtypes.to_excel(
+            tmp_writer, sheet_name="info_lostrows", index=True, engine="xlsxwriter"
+        )
         # sap_df: pd.DataFrame = results[0]
         # c1_df: pd.DataFrame = results[1][0]
         # sap_df.to_excel("out/sap_df.xlsx", index=True, engine="xlsxwriter")
         # c1_df.to_excel("out/c1_df.xlsx", index=True, engine="xlsxwriter")
 
         tmp_writer.close()
+        sys.exit(0)
+
         timer("Завершена запись в промежуточный файл", startTime)
         print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
 
@@ -762,7 +763,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     toe(dfl_s, params)
 
     # автоподбор ширины колонок
-    gl_writer.book.get_worksheet_by_name(params["страница"]).autofit()
+    gl_writer.book.get_worksheet_by_name(params["страница"]).autofit()  # type: ignore
 
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]

@@ -214,27 +214,40 @@ def intoclickhouse(client, df: pd.DataFrame, table_name: str, append=False, drop
             parameters=parameters,
         )
 
-    # backend_np = False
-    # for dtype in df.dtypes:
-    #     if str(dtype).endswith("[pyarrow]") is not True:
-    #         backend_np = True
-    #         break
+    backend_np = False
+    for dtype in df.dtypes:
+        if str(dtype).endswith("[pyarrow]") is not True:
+            backend_np = True
+            break
 
-    # if backend_np:
-    #     df2 = df.convert_dtypes(dtype_backend="pyarrow")
-    #     pd.set_option("display.max_rows", None)
-    #     print("полуконвертация", df2.dtypes)
-    #     cols_str = df.select_dtypes(include=["object", "category"]).columns
-    #     df2[cols_str] = df2[cols_str].astype(pd.ArrowDtype(pa.string()))
-    #     print("окончатальная конвертация", df2.dtypes)
-    #     # Optional: Reset back to default settings later
-    #     pd.reset_option("display.max_rows")
-    #     client.insert_df_arrow(table_name, df2)
-    # else:
-    #     client.insert_df_arrow(table_name, df)
+    if backend_np:
+        df2 = df.convert_dtypes(dtype_backend="pyarrow")
+        pd.set_option("display.max_rows", None)
+        print("полуконвертация", df2.dtypes)
+        # cols_str = df.select_dtypes(include=["object", "category"]).columns
+        cols_str = df.select_dtypes(include=["category"]).columns
+
+        df2[cols_str] = df2[cols_str].astype(pd.ArrowDtype(pa.string()))
+        print("окончатальная конвертация", df2.dtypes)
+        # Optional: Reset back to default settings later
+        pd.reset_option("display.max_rows")
+        client.insert_df_arrow(table_name, df2)
+    else:
+        client.insert_df_arrow(table_name, df)
+
     pd.set_option("display.max_rows", None)
-    print("полуконвертация", df.dtypes)
-    pd.reset_option("display.max_rows")
+
+    # print("полуконвертация", df.dtypes)
+    # pd.reset_option("display.max_rows")
+
+    # cols_str = df.select_dtypes(include=["datetime"]).columns
+    # print(cols_str)
+    # print(df[cols_str].dtypes)
+
+    # mmax = pd.Timestamp.max.to_pydatetime()
+    # df.loc[df[cols_str].gt(mmax).any(axis=1), cols_str] = mmax
+
+    # df[cols_str].to_csv("out/test.csv")
 
     client.insert_df(table_name, df)
 
@@ -255,11 +268,10 @@ def create_table_schema(client, df, table_name):
         "object": "Nullable(String) CODEC(LZ4)",
         "category": "LowCardinality(String)",
         "bool": "Bool",
-        "datetime64[ns]": "DateTime64(3)",
-        "timestamp[ns][pyarrow]": "DateTime64(3)",
-        "timestamp[us][pyarrow]": "DateTime64(6)",
-        "datetime64[us]": "DateTime64(6)",
-        # "datetime64[us]": "DateTime64(3)",
+        "datetime64[ns]": "Nullable(DateTime64(3))",
+        "timestamp[ns][pyarrow]": "Nullable(DateTime64(3))",
+        "timestamp[us][pyarrow]": "Nullable(DateTime64(6))",
+        "datetime64[us]": "Nullable(DateTime64(6))",
         "str": "Nullable(String) CODEC(LZ4)",
         "string[pyarrow]": "Nullable(String) CODEC(LZ4)",
         "large_string[pyarrow]": "Nullable(String) CODEC(LZ4)",
