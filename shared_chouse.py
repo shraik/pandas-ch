@@ -1,4 +1,5 @@
 # pip install sqlalchemy-cratedb==0.42.0.dev2
+import pyarrow as pa
 import clickhouse_connect
 from clickhouse_connect.driver.exceptions import DatabaseError
 import pandas as pd
@@ -213,21 +214,29 @@ def intoclickhouse(client, df: pd.DataFrame, table_name: str, append=False, drop
             parameters=parameters,
         )
 
-    backend_np = False
-    for dtype in df.dtypes:
-        if str(dtype).endswith("[pyarrow]") is not True:
-            backend_np = True
-            break
+    # backend_np = False
+    # for dtype in df.dtypes:
+    #     if str(dtype).endswith("[pyarrow]") is not True:
+    #         backend_np = True
+    #         break
 
-    if backend_np:
-        df2 = df.convert_dtypes(dtype_backend="pyarrow")
-        print("полуконвертация", df2.dtypes)
-        cols_str = df.select_dtypes(include=["object", "category"]).columns
-        df2[cols_str] = df2[cols_str].astype("string[pyarrow]")
-        print("окончатальная конвертация", df2.dtypes)
-        client.insert_df_arrow(table_name, df2)
-    else:
-        client.insert_df_arrow(table_name, df)
+    # if backend_np:
+    #     df2 = df.convert_dtypes(dtype_backend="pyarrow")
+    #     pd.set_option("display.max_rows", None)
+    #     print("полуконвертация", df2.dtypes)
+    #     cols_str = df.select_dtypes(include=["object", "category"]).columns
+    #     df2[cols_str] = df2[cols_str].astype(pd.ArrowDtype(pa.string()))
+    #     print("окончатальная конвертация", df2.dtypes)
+    #     # Optional: Reset back to default settings later
+    #     pd.reset_option("display.max_rows")
+    #     client.insert_df_arrow(table_name, df2)
+    # else:
+    #     client.insert_df_arrow(table_name, df)
+    pd.set_option("display.max_rows", None)
+    print("полуконвертация", df.dtypes)
+    pd.reset_option("display.max_rows")
+
+    client.insert_df(table_name, df)
 
     print(
         f"intoclickhouse. Data from dataframe inserted into clickhouse table '{table_name}'."
@@ -244,12 +253,13 @@ def create_table_schema(client, df, table_name):
         "Float64": "Nullable(Float64)",
         "double[pyarrow]": "Nullable(Float64)",
         "object": "Nullable(String) CODEC(LZ4)",
-        "category": "Nullable(String) CODEC(LZ4)",
+        "category": "LowCardinality(String)",
         "bool": "Bool",
         "datetime64[ns]": "DateTime64(3)",
         "timestamp[ns][pyarrow]": "DateTime64(3)",
         "timestamp[us][pyarrow]": "DateTime64(6)",
         "datetime64[us]": "DateTime64(6)",
+        # "datetime64[us]": "DateTime64(3)",
         "str": "Nullable(String) CODEC(LZ4)",
         "string[pyarrow]": "Nullable(String) CODEC(LZ4)",
         "large_string[pyarrow]": "Nullable(String) CODEC(LZ4)",

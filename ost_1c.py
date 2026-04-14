@@ -398,16 +398,16 @@ def start_parellel():
         startTime = timer(name="Начало записи промежуточного файла")
         filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
         tmp_writer = initexcel(filenametosave)
-        c1_ost.to_excel(
-            tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
-        )
-        c1_ost.dtypes.to_excel(
-            tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
-        )
-        sap_df: pd.DataFrame = results[0]
-        c1_df: pd.DataFrame = results[1][0]
-        sap_df.to_excel("out/sap_df.xlsx", index=True, engine="xlsxwriter")
-        c1_df.to_excel("out/c1_df.xlsx", index=True, engine="xlsxwriter")
+        # c1_ost.to_excel(
+        #     tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
+        # )
+        # c1_ost.dtypes.to_excel(
+        #     tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
+        # )
+        # sap_df: pd.DataFrame = results[0]
+        # c1_df: pd.DataFrame = results[1][0]
+        # sap_df.to_excel("out/sap_df.xlsx", index=True, engine="xlsxwriter")
+        # c1_df.to_excel("out/c1_df.xlsx", index=True, engine="xlsxwriter")
 
         tmp_writer.close()
         timer("Завершена запись в промежуточный файл", startTime)
