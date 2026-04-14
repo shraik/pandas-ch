@@ -220,9 +220,11 @@ def intoclickhouse(client, df: pd.DataFrame, table_name: str, append=False, drop
             break
 
     if backend_np:
-        cols_str = df.select_dtypes(include="object").columns
-        df[cols_str] = df[cols_str].astype("str")
         df2 = df.convert_dtypes(dtype_backend="pyarrow")
+        print("полуконвертация", df2.dtypes)
+        cols_str = df.select_dtypes(include=["object", "category"]).columns
+        df2[cols_str] = df2[cols_str].astype("string[pyarrow]")
+        print("окончатальная конвертация", df2.dtypes)
         client.insert_df_arrow(table_name, df2)
     else:
         client.insert_df_arrow(table_name, df)
@@ -242,6 +244,7 @@ def create_table_schema(client, df, table_name):
         "Float64": "Nullable(Float64)",
         "double[pyarrow]": "Nullable(Float64)",
         "object": "Nullable(String) CODEC(LZ4)",
+        "category": "Nullable(String) CODEC(LZ4)",
         "bool": "Bool",
         "datetime64[ns]": "DateTime64(3)",
         "timestamp[ns][pyarrow]": "DateTime64(3)",

@@ -25,6 +25,16 @@ gl_back_addr = {}
 
 
 def initexcel(pathtofile: str):
+    """Инициализация excel файла для записи. Настройка стилей.
+
+    Args:
+        pathtofile (str): Путь к файлу для записи
+
+
+    Returns:
+        pd.ExcelWriter: Excel writer.
+    """
+    global gl_format0, gl_format1, gl_link_format
     writer = pd.ExcelWriter(
         pathtofile,
         mode="w",
@@ -33,6 +43,13 @@ def initexcel(pathtofile: str):
         datetime_format="dd/mm/yyyy",
         # engine_kwargs={"options": {"strings_to_urls": True}},
     )
+    gl_format1 = writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})  # type: ignore
+    gl_format0 = writer.book.add_format({"num_format": "#,##0;-#,##0;-"})  # type: ignore
+
+    gl_link_format = writer.book.get_default_url_format()  # type: ignore
+    gl_link_format.set_align("center")
+    gl_link_format.set_bold()
+
     return writer
 
 
@@ -98,6 +115,12 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
     return ldf
 
 
+def lost_row(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
+    res = sap_ost
+
+    return res
+
+
 def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
 
     # сбросить строки в которых не заполнен КСМ
@@ -116,7 +139,12 @@ def extract(sap_ost: pd.DataFrame, c1_ost: pd.DataFrame) -> pd.DataFrame:
 
     # слияние
     c1_ost = pd.merge(
-        left=c1_ost, right=sap_ost, how="left", left_on="key", right_on="key"
+        left=c1_ost,
+        right=sap_ost,
+        how="left",
+        left_on="key",
+        right_on="key",
+        indicator=True,
     )
 
     # преобразовать типы данных
@@ -361,20 +389,29 @@ def start_parellel():
         # sys.exit(0)
 
         c1_ost = extract(results[0], results[1][0])  # type: ignore
-        # mol_file = results[1][1]  # type: ignore
 
-        # startTime = timer(name="Начало записи промежуточного файла")
-        # filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
-        # tmp_writer = initexcel(filenametosave)
-        # c1_ost.to_excel(
-        #     tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
-        # )
-        # c1_ost.dtypes.to_excel(
-        #     tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
-        # )
-        # tmp_writer.close()
-        # timer("Завершена запись в промежуточный файл", startTime)
-        # print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
+        # поиск строк не найденных в 1С
+        # lostrows = lost_row(results[0], results[1][0])  # type: ignore
+
+        mol_file = results[1][1]  # type: ignore
+
+        startTime = timer(name="Начало записи промежуточного файла")
+        filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
+        tmp_writer = initexcel(filenametosave)
+        c1_ost.to_excel(
+            tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
+        )
+        c1_ost.dtypes.to_excel(
+            tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
+        )
+        sap_df: pd.DataFrame = results[0]
+        c1_df: pd.DataFrame = results[1][0]
+        sap_df.to_excel("out/sap_df.xlsx", index=True, engine="xlsxwriter")
+        c1_df.to_excel("out/c1_df.xlsx", index=True, engine="xlsxwriter")
+
+        tmp_writer.close()
+        timer("Завершена запись в промежуточный файл", startTime)
+        print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
 
         startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
         intoclickhouse(
@@ -590,7 +627,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
         dfl (pd.DataFrame): датафрейм
         toch (bool, optional): Флаг записи в БД. Defaults to False.
     """
-    global gl_writer, gl_format0, gl_format1, gl_link_format
+    global gl_writer
 
     # проверка и создание выходного каталога
     folder_path = Path(pathtofile).parents[0]
@@ -600,12 +637,6 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     workbook.add_worksheet("base")  # pyright: ignore[reportAttributeAccessIssue]
     workbook.add_worksheet("filter")  # pyright: ignore[reportAttributeAccessIssue]
     # workbook.add_worksheet("Суммы")
-    gl_format1 = gl_writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})  # type: ignore
-    gl_format0 = gl_writer.book.add_format({"num_format": "#,##0;-#,##0;-"})  # type: ignore
-
-    gl_link_format = gl_writer.book.get_default_url_format()  # type: ignore
-    gl_link_format.set_align("center")
-    gl_link_format.set_bold()
 
     goodlist = [
         "Счет",
@@ -670,28 +701,6 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
         | dfl_s["Склад / Контрагент / Работник"].isin(mol_1c)
     ]
 
-    # сбросить пустые строки по набору столбцов
-    # empty_f = [
-    #     "Начальный остаток_Количество",
-    #     "Приход_Количество",
-    #     "Приход_Сумма (без НДС)",
-    #     "Приход_в т.ч. сумма доп. расходов",
-    #     "Расход_Количество",
-    #     "Расход_Сумма (без НДС)",
-    #     "Расход_в т.ч. сумма доп. расходов",
-    #     "Конечный остаток_Количество",
-    #     "Конечный остаток_Сумма (без НДС)",
-    #     "Конечный остаток_в т.ч. сумма доп. расходов",
-    #     "Конечный остаток_Сумма ТЗР",
-    #     "Конечный остаток_Цена (средняя)",
-    #     "Конечный остаток_Итого с ТЗР (без НДС)",
-    # ]
-    # dfl_s[empty_f] = dfl_s[empty_f].replace(0.0, pd.NA)
-    # dfl_s = dfl_s.dropna(subset=empty_f, axis="index", how="all")
-
-    # print("==na==")
-    # print(dfl_s[dfl_s["Склад / Контрагент / Работник"] == "МОЛ ЦАП"][empty_f])
-
     # записать в excel выборку колонок
     dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
 
@@ -707,6 +716,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
         "Конечный остаток_Сумма (без НДС)",
         "Конечный остаток_Итого с ТЗР (без НДС)",
     ]
+    # в колонках суммирования заменить na на нули
     dfl_s[param_sum] = dfl_s[param_sum].fillna(0.0)
     param_ind = [
         "Наименование подразделения",
@@ -751,9 +761,14 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     # вывод таблиц с расшифровками
     toe(dfl_s, params)
 
+    # автоподбор ширины колонок
+    gl_writer.book.get_worksheet_by_name(params["страница"]).autofit()
+
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
     hyperlink(params)
+
+    # ====добавление листа с не синхронизированными строками
 
 
 if __name__ == "__main__":
