@@ -124,7 +124,7 @@ def load_mol_excel(clumns: dict, header_row: list, filename: str) -> pd.DataFram
 
     # print(res.columns.to_flat_index())
 
-    res.columns = ["_".join(a) for a in res.columns.to_flat_index()]
+    res.columns = ["_".join(a) for a in res.columns.to_flat_index()]  # type: ignore
 
     lisc = res.columns.to_list()
 

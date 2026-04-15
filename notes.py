@@ -38,4 +38,10 @@ def examples():
     # )
     # df_new = df_new.drop(df_raw_c.index[: max(header_row) + 1]).reset_index(drop=True)
 
+    # снятие ограничений на ширину и высоту вывода на экран
+    # pd.set_option("display.max_rows", None)
+    # pd.set_option("display.max_columns", None)
+    # pd.reset_option("display.max_rows")
+    # pd.reset_option("display.max_columns")
+
     return 0

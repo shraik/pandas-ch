@@ -1,7 +1,8 @@
 import pandas as pd
 from pathlib import Path
 import sys
-from datetime import datetime
+
+# from datetime import datetime
 import toml
 
 # from shared_module2 import check_df
@@ -471,8 +472,8 @@ def test_parallel():
 
     # sys.exit(0)
 
-    c1_ost = extract(results[0], results[1][0])
-    mol_file = results[1][1]
+    c1_ost = extract(results[0], results[1][0])  # type: ignore
+    mol_file = results[1][1]  # type: ignore
 
     startTime = timer(name="Начало записи в выходной файл")
     gl_writer = initexcel("out/" + Path(mol_file).stem + ".xlsx")

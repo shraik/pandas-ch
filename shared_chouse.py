@@ -1,6 +1,7 @@
 # pip install sqlalchemy-cratedb==0.42.0.dev2
-import pyarrow as pa
+# import pyarrow as pa
 import clickhouse_connect
+from clickhouse_connect import driver as ch_driver
 from clickhouse_connect.driver.exceptions import DatabaseError
 import pandas as pd
 import sys
@@ -77,7 +78,7 @@ def timer(name: str, startTime=None):
 
 
 def check_file_data_ch(
-    client: clickhouse_connect.driver.client,  # type: ignore
+    client: ch_driver.Client,
     modified: datetime,
     ftl: str,
 ) -> bool:
@@ -113,7 +114,7 @@ def check_file_data_ch(
 
 
 def load_ch(
-    client: clickhouse_connect.driver.client,  # type: ignore
+    client: ch_driver.Client,
     table_name: str,
     filter=None,
 ) -> pd.DataFrame:
@@ -150,7 +151,7 @@ def contc(
     port=8123,
     username="default",
     password="",
-) -> clickhouse_connect.driver.httpclient.HttpClient:  # type: ignore
+) -> ch_driver.Client:
     try:
         client = clickhouse_connect.get_client(
             host=hostip,
@@ -187,13 +188,19 @@ def contc(
     return client
 
 
-def intoclickhouse(client, df: pd.DataFrame, table_name: str, append=False, dropc=""):
+def intoclickhouse(
+    client: ch_driver.Client,
+    df: pd.DataFrame,
+    table_name: str,
+    append=False,
+    dropc="",
+):
     """Записать датафрейм в clickhouse.
     Если в БД будет существовать таблица с таким имененем, она будет перезаписна.
     Нераспознанные типы, для хранения преобразуются в 'str'.
 
     Args:
-        client (_type_): соединение к clickhouse
+        client (ch_driver.Client): соединение к clickhouse
         df (pd.DataFrame): датафрейм для записи в clickhouse
         table_name (str): имя таблицы в clickhouse
         append(bool): признак добавления к таблице. Отключается очистка и создание схемы.
@@ -214,42 +221,32 @@ def intoclickhouse(client, df: pd.DataFrame, table_name: str, append=False, drop
             parameters=parameters,
         )
 
-    backend_np = False
-    for dtype in df.dtypes:
-        if str(dtype).endswith("[pyarrow]") is not True:
-            backend_np = True
-            break
+    # перезапись максимальной даты на 2259 год из-за ограничений clickhouse
+    mmax = pd.Timestamp.max.to_pydatetime(warn=False)
+    cols_date = df.select_dtypes(include=["datetime64"]).columns
+    df[cols_date] = df[cols_date].mask(df[cols_date] > mmax, mmax)
 
-    if backend_np:
-        df2 = df.convert_dtypes(dtype_backend="pyarrow")
-        pd.set_option("display.max_rows", None)
-        print("полуконвертация", df2.dtypes)
-        # cols_str = df.select_dtypes(include=["object", "category"]).columns
-        cols_str = df.select_dtypes(include=["category"]).columns
+    # df.loc[df[cols_date].gt(mmax).any(axis=1), cols_date] = mmax
 
-        df2[cols_str] = df2[cols_str].astype(pd.ArrowDtype(pa.string()))
-        print("окончатальная конвертация", df2.dtypes)
-        # Optional: Reset back to default settings later
-        pd.reset_option("display.max_rows")
-        client.insert_df_arrow(table_name, df2)
+    backend_type = "pyarrow"
+    # backend_type = "pandas"
+
+    if backend_type == "pyarrow":
+        backend_np = False
+        for dtype in df.dtypes:
+            if str(dtype).endswith("[pyarrow]") is not True:
+                backend_np = True
+                break
+
+        if backend_np:
+            df2 = df.convert_dtypes(dtype_backend="pyarrow")
+            # cols_str = df.select_dtypes(include=["category"]).columns
+            # df2[cols_str] = df2[cols_str].astype(pd.ArrowDtype(pa.string()))
+            client.insert_df_arrow(table_name, df2)
+        else:
+            client.insert_df_arrow(table_name, df)
     else:
-        client.insert_df_arrow(table_name, df)
-
-    pd.set_option("display.max_rows", None)
-
-    # print("полуконвертация", df.dtypes)
-    # pd.reset_option("display.max_rows")
-
-    # cols_str = df.select_dtypes(include=["datetime"]).columns
-    # print(cols_str)
-    # print(df[cols_str].dtypes)
-
-    # mmax = pd.Timestamp.max.to_pydatetime()
-    # df.loc[df[cols_str].gt(mmax).any(axis=1), cols_str] = mmax
-
-    # df[cols_str].to_csv("out/test.csv")
-
-    client.insert_df(table_name, df)
+        client.insert_df(table_name, df)
 
     print(
         f"intoclickhouse. Data from dataframe inserted into clickhouse table '{table_name}'."
@@ -365,7 +362,7 @@ def save_file_data_ch(client, modified, ftl, gl_dagmode=True) -> bool:
 
 
 def load_mol_сh(
-    client: clickhouse_connect.driver.client,
+    client: ch_driver.Client,
     clumns: dict,
     header_row: list,
     table_name: str,

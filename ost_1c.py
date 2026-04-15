@@ -1,7 +1,9 @@
 import pandas as pd
 import re
 from pathlib import Path
+from typing import Optional
 import sys
+from clickhouse_connect import driver as ch_driver
 
 # from xlsxwriter import workbook
 from shared_chouse import (
@@ -30,11 +32,15 @@ def initexcel(pathtofile: str):
     Args:
         pathtofile (str): Путь к файлу для записи
 
-
     Returns:
         pd.ExcelWriter: Excel writer.
     """
     global gl_format0, gl_format1, gl_link_format
+
+    # проверка и создание выходного каталога
+    folder_path = Path(pathtofile).parents[0]
+    folder_path.mkdir(parents=True, exist_ok=True)
+
     writer = pd.ExcelWriter(
         pathtofile,
         mode="w",
@@ -117,7 +123,7 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
 
 def extract(
     sap_ost: pd.DataFrame, c1_ost: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     # сбросить строки в которых не заполнен КСМ
     c1_ost = c1_ost.dropna(subset="КСМ")
@@ -184,13 +190,40 @@ def extract(
         "Запасы под потребность текущего периода"
     )
 
+    # заполнить пустые значения в "Наименование категории запаса" (из 1с) на "Запасы под потребность текущего периода"
+    c1_ost["Наименование категории запаса"] = c1_ost[
+        "Наименование категории запаса"
+    ].fillna("Запасы под потребность текущего периода")
+
     # вывести результат в файл
     print("Датафрейм для записи в выходной файл:")
     print(c1_ost.info())
 
     lost = sap_ost[~sap_ost["key"].isin(c1_ost["key"])]
 
-    return c1_ost, lost
+    # фильтр по "Наименование подразделения"
+    podr_sap = [
+        "Отдел автоматизированных систем управления технологическим процессом",
+        "Отдел телекоммуникаций",
+        "Отдел информационных технологий",
+        "Управление метрологии, автоматизации и информационных технологий и телекоммуникаций (не использовать)",
+        "ОАСУТП",
+        "ОТ",
+        "ОИТ",
+    ]
+
+    manager = [
+        "Менеджер УМАИТиТ ОТ",
+        "Менеджер УМАИТиТ ОАСУТП",
+        "Менеджер УМАИТиТ ОИТ",
+    ]
+    # выборка по фильтрам
+    lost_warn = lost[
+        lost["Наименование подразделения"].isin(podr_sap)
+        | lost["ФИО менеджера"].isin(manager)
+    ]
+
+    return c1_ost, lost, lost_warn
 
 
 def load_mol_excel(
@@ -202,12 +235,6 @@ def load_mol_excel(
 
     res = pd.read_excel(filename, dtype=str, header=header_row, engine="calamine")
     res2 = pd.read_excel(filename, nrows=header_row[0], engine="calamine")
-
-    # затычка для ускорения отладки
-    # res.to_parquet("C1_in/1с-2026-02-остатки.parquet")
-    # res2.to_parquet("C1_in/1с-2026-02-остатки_res2.parquet")
-    # res = pd.read_parquet("C1_in/1с-2026-02-остатки.parquet")
-    # res2 = pd.read_parquet("C1_in/1с-2026-02-остатки_res2.parquet")
 
     # логическая матрица поиска слова во фрейме
     res3 = res2.apply(lambda col: col.str.contains("Период", na=False), axis=1)
@@ -226,7 +253,9 @@ def load_mol_excel(
 
     lisc = res.columns.to_list()
 
-    print(f"Список прочитанных колонок: {lisc}, \nколичество колонок: {len(lisc)}")
+    print(
+        f"Список прочитанных колонок в файле {str(Path(filename).resolve())}: {lisc}, \nколичество колонок: {len(lisc)}"
+    )
     # список найденных имён колонок
     resl = []
     # дикт для переименования найденных колонок
@@ -382,37 +411,34 @@ def start_parellel():
         results = Parallel(n_jobs=-1)(tasks)
         timer("Чтение завершено.", startTime)
 
-        # sys.exit(0)
-        # +поиск строк не найденных в 1С
-        c1_ost, lostrows = extract(results[0], results[1][0])  # type: ignore
+        # поиск совпадений и строк не найденных в 1С
+        c1_ost, lostrows, lost_warn = extract(results[0], results[1][0])  # type: ignore
 
-        mol_file = results[1][1]  # type: ignore
-
-        startTime = timer(name="Начало записи промежуточного файла")
-        filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
-        tmp_writer = initexcel(filenametosave)
-        c1_ost.to_excel(
-            tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
-        )
-        c1_ost.dtypes.to_excel(
-            tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
-        )
-        lostrows.to_excel(
-            tmp_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
-        )
-        lostrows.dtypes.to_excel(
-            tmp_writer, sheet_name="info_lostrows", index=True, engine="xlsxwriter"
-        )
+        # ===блок вывода промежуточных файлов для отладки
+        # mol_file = results[1][1]  # type: ignore
+        # startTime = timer(name="Начало записи промежуточного файла")
+        # filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
+        # tmp_writer = initexcel(filenametosave)
+        # c1_ost.to_excel(
+        #     tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
+        # )
+        # c1_ost.dtypes.to_excel(
+        #     tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
+        # )
+        # lostrows.to_excel(
+        #     tmp_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
+        # )
+        # lostrows.dtypes.to_excel(
+        #     tmp_writer, sheet_name="info_lostrows", index=True, engine="xlsxwriter"
+        # )
         # sap_df: pd.DataFrame = results[0]
         # c1_df: pd.DataFrame = results[1][0]
         # sap_df.to_excel("out/sap_df.xlsx", index=True, engine="xlsxwriter")
         # c1_df.to_excel("out/c1_df.xlsx", index=True, engine="xlsxwriter")
-
-        tmp_writer.close()
-        sys.exit(0)
-
-        timer("Завершена запись в промежуточный файл", startTime)
-        print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
+        # tmp_writer.close()
+        # timer("Завершена запись в промежуточный файл", startTime)
+        # print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
+        # ===\блок вывода промежуточных файлов для отладки
 
         startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
         intoclickhouse(
@@ -431,18 +457,23 @@ def start_parellel():
     c2_df = load_ch(gl_client, "c1_sap_ost_flat")
     timer("Читаем из clickhouse, таблицу c1_sap_ost_flat", startTime)
 
-    # print(c2_df)
     print("====считанная таблица====")
-    print(c2_df.info())
+    c2_df.info()
     # print("====")
     # print(c2_df.dtypes)
 
     repfile = "out/report.xlsx"
     gl_writer = initexcel(repfile)
+    lost_warn.to_excel(
+        gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
+    )
+    lostrows.to_excel(
+        gl_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
+    )
 
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
-    report(repfile, c2_df, toch=True, client=gl_client)
+    report(c2_df, toch=True, client=gl_client)
     timer("Формирование выборки", startTime)
 
     if gl_client.ping():
@@ -517,24 +548,20 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     itogt.reset_index(inplace=True)
 
     for row in table.itertuples():
-        # dff = mol_pd[
-        #     (mol_pd[param["pivot_ind"][0]] == row[1])
-        #     & (mol_pd[param["pivot_ind"][1]] == row[2])
-        # ]
-
+        # сборка фильтров для вывода фреймов расшифровок
         ffilter = mol_pd[param["pivot_ind"][0]] == row[1]
         for mm in range(1, len(param["pivot_ind"])):
             ffilter = ffilter & (mol_pd[param["pivot_ind"][mm]] == row[mm + 1])
 
         # dff = mol_pd[ffilter]
         if param.get("display", None):
-            dff = mol_pd[param["display"]]
+            dff: pd.DataFrame = mol_pd[param["display"]]
         else:
-            dff = mol_pd[ffilter]
+            dff: pd.DataFrame = mol_pd[ffilter]
 
-        # sheetname = param["префиксл"] + "_" + str(row[1]) + "_" + str(row[2])
         sheetname = param["префиксл"] + "_" + str(sh_count)
         sh_count += 1
+
         # удалить пустые колонки из расшифровок
         dff = dff.dropna(axis="columns", how="all")
         dff.to_excel(
@@ -585,6 +612,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         },
     )
 
+    # вывод таблицы подитога
     param["writer"].book.get_worksheet_by_name(param["страница"]).write_string(
         param["начстрока"] + len(table.index) + 2,
         param["начколонка"] + table.shape[1] - itogt.shape[1],
@@ -620,7 +648,11 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     return len(table.index) + len(itogt.index) + 3
 
 
-def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
+def report(
+    dfl: pd.DataFrame,
+    toch=False,
+    client: Optional[ch_driver.Client] = None,
+):
     """Формирование выходного отчета. Запись промежуточной таблицы в Clickhouse
 
     Args:
@@ -629,10 +661,6 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
         toch (bool, optional): Флаг записи в БД. Defaults to False.
     """
     global gl_writer
-
-    # проверка и создание выходного каталога
-    folder_path = Path(pathtofile).parents[0]
-    folder_path.mkdir(parents=True, exist_ok=True)
 
     workbook = gl_writer.book
     workbook.add_worksheet("base")  # pyright: ignore[reportAttributeAccessIssue]
@@ -677,7 +705,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     dfl_s = dfl[goodlist]
 
     # записать в excel выборку колонок
-    # dfl_s.to_excel(gl_writer, sheet_name="base", index=False)
+    dfl_s.to_excel(gl_writer, sheet_name="base", index=False)
 
     # фильтр по "Наименование подразделения"
     podr_sap = [
@@ -705,7 +733,7 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
     # записать в excel выборку колонок
     dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
 
-    if toch:
+    if toch and client is not None:
         intoclickhouse(
             client,
             dfl_s,
@@ -726,27 +754,21 @@ def report(pathtofile: str, dfl: pd.DataFrame, toch=False, client=None):
         # "ФИО менеджера",
         "Наименование категории запаса",
     ]
-    # заполнить пустые значения в "Наименование категории запаса" (из 1с) на "Запасы под потребность текущего периода"
-    dfl_s["Наименование категории запаса"] = dfl_s[
-        "Наименование категории запаса"
-    ].fillna("Запасы под потребность текущего периода")
 
     # свертка по подразделениям
-    table = pd.pivot_table(
-        dfl_s,
-        values=param_sum,
-        # "pivot_sum": ["Расход. Сумма (без НДС)", "Остаток (без НДС)"],
-        index=param_ind,
-        # "pivot_ind": ["Наименование подразделения", "Вид деят"],
-        aggfunc="sum",
-        # dropna=False,
-    )
-
-    table = table.reindex(param_sum, axis=1)
-    table.reset_index(inplace=True)
-
-    table.to_excel(gl_writer, sheet_name="Сводная", index=False)
-    workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
+    # table = pd.pivot_table(
+    #     dfl_s,
+    #     values=param_sum,
+    #     # "pivot_sum": ["Расход. Сумма (без НДС)", "Остаток (без НДС)"],
+    #     index=param_ind,
+    #     # "pivot_ind": ["Наименование подразделения", "Вид деят"],
+    #     aggfunc="sum",
+    #     # dropna=False,
+    # )
+    # table = table.reindex(param_sum, axis=1)
+    # table.reset_index(inplace=True)
+    # table.to_excel(gl_writer, sheet_name="Сводная", index=False)
+    # workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
 
     params = {
         "writer": gl_writer,
