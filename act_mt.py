@@ -621,6 +621,7 @@ if __name__ == "__main__":
         tablename,
         only_selected=False,
         drop_un=True,
+        drop_itogo=True,
     )
 
     # print(res)

@@ -71,25 +71,33 @@ def cl_sqla():
     """
 
     # "clickhousedb://user:password@host:8123/mydb?compression=zstd"
-    engine = create_engine("clickhousedb://default:asd123@192.168.5.17:8123/default")
+    engine = create_engine("clickhousedb://default@192.168.5.17:8123/db_pandas")
 
-    with engine.connect() as connection:
-        connection.execute(text(create_table_query))
-        connection.commit()
+    # with engine.connect() as connection:
+    #     connection.execute(text(create_table_query))
+    #     connection.commit()
 
-    df = pd.DataFrame(
-        {
-            "id": [1, 2, 3],
-            "name": ["Alice", "Bob", "Joe"],
-            "age": [25, 30, 28],
-        }
-    )
+    # df = pd.DataFrame(
+    #     {
+    #         "id": [1, 2, 3],
+    #         "name": ["Alice", "Bob", "Joe"],
+    #         "age": [25, 30, 28],
+    #     }
+    # )
     # df.to_sql("autot", con=engine, index=False, if_exists="replace")
-    df.to_sql("autot", con=engine, index=False, if_exists="append")
+    # df.to_sql("autot", con=engine, index=False, if_exists="append")
 
     with engine.begin() as conn:
         rows = conn.execute(text("SELECT version()"))
         print(rows.scalar())
+
+    with engine.connect() as connection:
+        # connection.execute(text(create_table_query))
+        # connection.commit()
+
+        conf_dict = pd.read_sql_table("c1_ost_flat", connection)
+        conf_dict.info()
+        print(conf_dict)
 
 
 if __name__ == "__main__":

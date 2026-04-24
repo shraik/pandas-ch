@@ -372,121 +372,6 @@ def pdread_c1(DATA_C1) -> tuple[pd.DataFrame, str]:
     ), mol_file
 
 
-def start_parellel():
-    global gl_writer
-    global gl_client
-
-    # load = False
-    load = True
-
-    Main_startTime = timer(name="============Запуск скрипта===============")
-
-    # загрузить конфиг и проверить, что из него пришли переменные
-    config_gl = loadinit()
-
-    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
-        "DEFAULT", "port"
-    ):
-        serverip = config_gl.get("DEFAULT", "serverip")
-        serverport = config_gl.get("DEFAULT", "port")
-        print(f"serverip: {serverip}")
-        print(f"serverip: {serverport}")
-    else:
-        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
-        sys.exit()
-
-    db_name = "db_pandas"
-    gl_client = contc(db_name, hostip=serverip, port=int(serverport))
-
-    DATA_SAP = "SAP_in"
-    DATA_C1 = "C1_in"
-
-    if load:
-        startTime = timer(name="Начало чтения входных файлов")
-
-        tasks = [
-            delayed(pdread_sap)(DATA_SAP),
-            delayed(pdread_c1)(DATA_C1),
-        ]
-        results = Parallel(n_jobs=-1)(tasks)
-        timer("Чтение завершено.", startTime)
-
-        # поиск совпадений и строк не найденных в 1С
-        c1_ost, lostrows, lost_warn = extract(results[0], results[1][0])  # type: ignore
-
-        # ===блок вывода промежуточных файлов для отладки
-        # mol_file = results[1][1]  # type: ignore
-        # startTime = timer(name="Начало записи промежуточного файла")
-        # filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
-        # tmp_writer = initexcel(filenametosave)
-        # c1_ost.to_excel(
-        #     tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
-        # )
-        # c1_ost.dtypes.to_excel(
-        #     tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
-        # )
-        # lostrows.to_excel(
-        #     tmp_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
-        # )
-        # lostrows.dtypes.to_excel(
-        #     tmp_writer, sheet_name="info_lostrows", index=True, engine="xlsxwriter"
-        # )
-        # sap_df: pd.DataFrame = results[0]
-        # c1_df: pd.DataFrame = results[1][0]
-        # sap_df.to_excel("out/sap_df.xlsx", index=True, engine="xlsxwriter")
-        # c1_df.to_excel("out/c1_df.xlsx", index=True, engine="xlsxwriter")
-        # tmp_writer.close()
-        # timer("Завершена запись в промежуточный файл", startTime)
-        # print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
-        # ===\блок вывода промежуточных файлов для отладки
-
-        startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
-        intoclickhouse(
-            gl_client,
-            c1_ost,
-            "c1_sap_ost_flat",
-            append=False,
-            # dropc="Версия2",
-        )
-        timer("Завершена запись в clickhouse", startTime)
-
-    print("\n===============Чтение из clickhouse====================")
-    startTime = timer(name="Читаем из clickhouse, таблицу c1_ost")
-
-    # c2_df = load_ch(gl_client, "c1_sap_ost_flat", "\"Версия2\"='2026-02-28'")
-    c2_df = load_ch(gl_client, "c1_sap_ost_flat")
-    timer("Читаем из clickhouse, таблицу c1_sap_ost_flat", startTime)
-
-    print("====считанная таблица====")
-    c2_df.info()
-    # print("====")
-    # print(c2_df.dtypes)
-
-    repfile = "out/report.xlsx"
-    gl_writer = initexcel(repfile)
-    lost_warn.to_excel(
-        gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
-    )
-    lostrows.to_excel(
-        gl_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
-    )
-
-    startTime = timer(name="Формирование выборки")
-    # формирование выходного файла
-    report(c2_df, toch=True, client=gl_client)
-    timer("Формирование выборки", startTime)
-
-    if gl_client.ping():
-        gl_client.close()
-        # print("\nConnection to ClickHouse closed.")
-
-    if gl_writer is not None:
-        gl_writer.close()
-
-    print(f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'")
-    timer("Итого времени выполнения скрипта", Main_startTime)
-
-
 def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     """
     формирование сводной таблицы и вывод в excel файл с расшифровками по уровням.
@@ -652,6 +537,7 @@ def report(
     dfl: pd.DataFrame,
     toch=False,
     client: Optional[ch_driver.Client] = None,
+    tablename="c1_ost_filter",
 ):
     """Формирование выходного отчета. Запись промежуточной таблицы в Clickhouse
 
@@ -659,13 +545,15 @@ def report(
         pathtofile (str): Путь к файлу для записи
         dfl (pd.DataFrame): датафрейм
         toch (bool, optional): Флаг записи в БД. Defaults to False.
+        client (ch_driver.Client, optional): Клиент соединения с БД. Defaults to None.
+        tablename (str, optional): Имя таблицы для записи в БД. Defaults to "c1_ost_filter".
     """
     global gl_writer
 
     workbook = gl_writer.book
-    workbook.add_worksheet("base")  # pyright: ignore[reportAttributeAccessIssue]
-    workbook.add_worksheet("filter")  # pyright: ignore[reportAttributeAccessIssue]
-    # workbook.add_worksheet("Суммы")
+    workbook.add_worksheet("base")  # type: ignore
+    workbook.add_worksheet("filter")  # type: ignore
+    workbook.add_worksheet("Суммы")  # type: ignore
 
     goodlist = [
         "Счет",
@@ -737,8 +625,13 @@ def report(
         intoclickhouse(
             client,
             dfl_s,
-            "c1_ost_filter",
+            tablename,
         )
+        print(
+            f"Report. Запись отфильтрованной таблицы:{tablename} в clickhouse выполнена."
+        )
+    else:
+        print("Report. Запись отфильтрованной таблицы в clickhouse отключена.")
 
     # генерация и вывод сводной
     param_sum = [
@@ -792,6 +685,121 @@ def report(
     hyperlink(params)
 
     # ====добавление листа с не синхронизированными строками
+
+
+def start_parellel():
+    global gl_writer
+    global gl_client
+
+    # load = False
+    load = True
+
+    Main_startTime = timer(name="============Запуск скрипта===============")
+
+    # загрузить конфиг и проверить, что из него пришли переменные
+    config_gl = loadinit()
+
+    if config_gl.has_option("DEFAULT", "serverip") and config_gl.has_option(
+        "DEFAULT", "port"
+    ):
+        serverip = config_gl.get("DEFAULT", "serverip")
+        serverport = config_gl.get("DEFAULT", "port")
+        print(f"serverip: {serverip}")
+        print(f"serverip: {serverport}")
+    else:
+        print("Не найден ключ 'serverip'/'port' в секции 'DEFAULT'.")
+        sys.exit()
+
+    db_name = "db_pandas"
+    gl_client = contc(db_name, hostip=serverip, port=int(serverport))
+
+    DATA_SAP = "SAP_in"
+    DATA_C1 = "C1_in"
+
+    if load:
+        startTime = timer(name="Начало чтения входных файлов")
+
+        # запуск параллельного считывания файлов excel
+        tasks = [
+            delayed(pdread_sap)(DATA_SAP),
+            delayed(pdread_c1)(DATA_C1),
+        ]
+        results = Parallel(n_jobs=-1)(tasks)
+        timer("Чтение завершено.", startTime)
+
+        # слияние и поиск строк не найденных в 1С
+        c1_ost, lostrows, lost_warn = extract(results[0], results[1][0])  # type: ignore
+
+        # ===блок вывода промежуточных файлов для отладки
+        # mol_file = results[1][1]  # type: ignore
+        # startTime = timer(name="Начало записи промежуточного файла")
+        # filenametosave = "out/" + Path(mol_file).stem + ".xlsx"
+        # tmp_writer = initexcel(filenametosave)
+        # c1_ost.to_excel(
+        #     tmp_writer, sheet_name="mol_file", index=False, engine="xlsxwriter"
+        # )
+        # c1_ost.dtypes.to_excel(
+        #     tmp_writer, sheet_name="info", index=True, engine="xlsxwriter"
+        # )
+        # lostrows.to_excel(
+        #     tmp_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
+        # )
+        # lostrows.dtypes.to_excel(
+        #     tmp_writer, sheet_name="info_lostrows", index=True, engine="xlsxwriter"
+        # )
+        # sap_df: pd.DataFrame = results[0]
+        # c1_df: pd.DataFrame = results[1][0]
+        # sap_df.to_excel("out/sap_df.xlsx", index=True, engine="xlsxwriter")
+        # c1_df.to_excel("out/c1_df.xlsx", index=True, engine="xlsxwriter")
+        # tmp_writer.close()
+        # timer("Завершена запись в промежуточный файл", startTime)
+        # print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
+        # ===\блок вывода промежуточных файлов для отладки
+
+        startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
+        intoclickhouse(
+            gl_client,
+            c1_ost,
+            "c1_sap_ost_flat",
+            append=False,
+            # dropc="Версия2",
+        )
+        timer("Завершена запись в clickhouse", startTime)
+
+    print("\n===============Чтение из clickhouse====================")
+    startTime = timer(name="Читаем из clickhouse, таблицу c1_ost")
+
+    # вариант с фильтром на считывание
+    # c2_df = load_ch(gl_client, "c1_sap_ost_flat", "\"Версия2\"='2026-02-28'")
+    c2_df = load_ch(gl_client, "c1_sap_ost_flat")
+    timer("Читаем из clickhouse, таблицу c1_sap_ost_flat", startTime)
+
+    print("====считанная таблица====")
+    c2_df.info()
+
+    repfile = "out/report.xlsx"
+    gl_writer = initexcel(repfile)
+    lost_warn.to_excel(
+        gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
+    )
+    lostrows.to_excel(
+        gl_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
+    )
+
+    startTime = timer(name="Формирование выборки")
+    # формирование выходного файла
+    report(c2_df, toch=True, client=gl_client, tablename="c1_ost_filter")
+    timer("Формирование выборки", startTime)
+
+    if gl_client.ping():
+        gl_client.close()
+        # print("\nConnection to ClickHouse closed.")
+
+    if gl_writer is not None:
+        gl_writer.close()
+
+    print(f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'")
+    timer("Итого времени выполнения скрипта", Main_startTime)
 
 
 if __name__ == "__main__":

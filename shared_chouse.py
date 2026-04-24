@@ -368,6 +368,7 @@ def load_mol_сh(
     table_name: str,
     only_selected=True,
     drop_un=False,
+    drop_itogo=True,
 ) -> pd.DataFrame:
     """Cчитывает таблицу из clickhouse.
     Формирует наименования колонок из 2х указанных строк.
@@ -465,6 +466,18 @@ def load_mol_сh(
         res = res.rename(columns=lambda x: re.sub(pattern, "", x))
         # сбросить дубликаты колонок по именам, сохранив первую
         res = res.loc[:, ~res.columns.duplicated()]
+
+    if drop_itogo:
+        res = res[res.iloc[:, 0] != "Итого"]
+
+    print("==до преобразования==")
+    res.info()
+    # преобразовать типы
+    res2 = res.convert_dtypes(dtype_backend="numpy_nullable")
+    print("==После преобразования==")
+    res2.info()
+
+    res2.to_csv("out/res2.csv")
 
     res["Версия"] = res4
     res["Версия2"] = pd.to_datetime(str(res4).strip()[-10:], format="%d.%m.%Y")
