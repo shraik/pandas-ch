@@ -95,7 +95,10 @@ def cl_sqla():
         # connection.execute(text(create_table_query))
         # connection.commit()
 
-        conf_dict = pd.read_sql_table("c1_ost_flat", connection)
+        query = "SELECT * FROM c1_ost_flat"
+        # conf_dict = pd.read_sql_table("c1_ost_flat", connection)
+        conf_dict = pd.read_sql(query, connection)
+
         conf_dict.info()
         print(conf_dict)
 

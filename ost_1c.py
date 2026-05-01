@@ -1,9 +1,12 @@
-import pandas as pd
+import configparser
 import re
+import sys
 from pathlib import Path
 from typing import Optional
-import sys
+
+import pandas as pd
 from clickhouse_connect import driver as ch_driver
+from joblib import Parallel, delayed
 
 # from xlsxwriter import workbook
 from shared_chouse import (
@@ -15,9 +18,6 @@ from shared_chouse import (
     # load_mol_сh,
     timer,
 )
-import configparser
-from joblib import Parallel, delayed
-
 
 gl_writer: pd.ExcelWriter
 gl_link_format = None
@@ -122,7 +122,7 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
 
 
 def extract(
-    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame
+    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame, sap_ost2: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     # сбросить строки в которых не заполнен КСМ
@@ -139,6 +139,19 @@ def extract(
         sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
     )
 
+    # подготовка таблицы с выгружаемыми запасами к слиянию
+    # сортировать по дате и оставлять только первую строку для каждого ключа
+    sap_ost2["key"] = (
+        sap_ost2["КодСклада"]
+        + sap_ost2["Код КСМ"].astype("string")
+        + sap_ost2["Партия"]
+    )
+    sap_ost2 = (
+        sap_ost2[["key", "ДатПервПст"]]  # pyright: ignore[reportCallIssue]
+        .sort_values(by="ДатПервПст", ascending=False)
+        .drop_duplicates(subset="key", keep="first")
+    )
+
     # слияние
     c1_ost = pd.merge(
         left=c1_ost,
@@ -147,6 +160,23 @@ def extract(
         left_on="key",
         right_on="key",
     )
+
+    # слияние с выгружаемыми запасами
+    c1_ost = pd.merge(
+        left=c1_ost,
+        right=sap_ost2,
+        how="left",
+        left_on="key",
+        right_on="key",
+    )
+    # c1_ost.to_parquet("c1_ost.parquet")
+    # print("запись временного файла")
+    # c1_ost.to_excel("c1_ost.xlsx", index=False)
+
+    # перенос данных из выгружаемых запасов "ДатПервПст" в выгрузку 1с
+    # print(c1_ost.dtypes)
+    mask = c1_ost["ДатаПервПост"].isna()
+    c1_ost.loc[mask, "ДатаПервПост"] = c1_ost["ДатПервПст"]
 
     # преобразовать типы данных
     c1_ost = make_clean(c1_ost)
@@ -714,6 +744,8 @@ def start_parellel():
     gl_client = contc(db_name, hostip=serverip, port=int(serverport))
 
     DATA_SAP = "SAP_in"
+    # данные по месяцам
+    DATA_SAP2 = "дпм"
     DATA_C1 = "C1_in"
 
     if load:
@@ -723,12 +755,13 @@ def start_parellel():
         tasks = [
             delayed(pdread_sap)(DATA_SAP),
             delayed(pdread_c1)(DATA_C1),
+            delayed(pdread_sap)(DATA_SAP2),
         ]
         results = Parallel(n_jobs=-1)(tasks)
         timer("Чтение завершено.", startTime)
 
         # слияние и поиск строк не найденных в 1С
-        c1_ost, lostrows, lost_warn = extract(results[0], results[1][0])  # type: ignore
+        c1_ost, lostrows, lost_warn = extract(results[0], results[1][0], results[2])  # type: ignore
 
         # ===блок вывода промежуточных файлов для отладки
         # mol_file = results[1][1]  # type: ignore
@@ -800,6 +833,7 @@ def start_parellel():
 
     print(f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'")
     timer("Итого времени выполнения скрипта", Main_startTime)
+    print("Завершено.")
 
 
 if __name__ == "__main__":
