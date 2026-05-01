@@ -3,6 +3,8 @@ import re
 import sys
 from pathlib import Path
 from typing import Optional
+from datetime import date, datetime
+
 
 import pandas as pd
 from clickhouse_connect import driver as ch_driver
@@ -585,6 +587,9 @@ def report(
     workbook.add_worksheet("filter")  # type: ignore
     workbook.add_worksheet("Суммы")  # type: ignore
 
+    # записать в excel имеющиеся колонок
+    dfl.to_excel(gl_writer, sheet_name="base", index=False)
+
     goodlist = [
         "Счет",
         "Номенклатура / ОС",
@@ -622,9 +627,6 @@ def report(
     ]
     dfl_s = dfl[goodlist]
 
-    # записать в excel выборку колонок
-    dfl_s.to_excel(gl_writer, sheet_name="base", index=False)
-
     # фильтр по "Наименование подразделения"
     podr_sap = [
         "Отдел автоматизированных систем управления технологическим процессом",
@@ -648,6 +650,13 @@ def report(
         | dfl_s["Склад / Контрагент / Работник"].isin(mol_1c)
     ]
 
+    date3y = pd.to_datetime(date(datetime.now().year - 3, 12, 31))
+    dfl_s.loc[dfl_s["ДатаПервПост"] <= date3y, "Сумма более 3х лет (без НДС)"] = dfl_s[
+        "Конечный остаток_Сумма (без НДС)"
+    ]
+
+    # df.loc[df['ConditionCol'] > 10, 'TargetCol'] = df['SourceCol']
+
     # записать в excel выборку колонок
     dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
 
@@ -667,6 +676,7 @@ def report(
     param_sum = [
         "Конечный остаток_Сумма (без НДС)",
         "Конечный остаток_Итого с ТЗР (без НДС)",
+        "Сумма более 3х лет (без НДС)",
     ]
     # в колонках суммирования заменить na на нули
     dfl_s[param_sum] = dfl_s[param_sum].fillna(0.0)

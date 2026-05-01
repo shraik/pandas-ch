@@ -9,8 +9,7 @@ data/
 out/
 C1_in/
 SAP_in/
-
-
+дпм/
 # Virtual environments
 .venv
 configs.db
