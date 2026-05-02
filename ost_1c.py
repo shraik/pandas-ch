@@ -1,10 +1,9 @@
 import configparser
 import re
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
-from datetime import date, datetime
-
 
 import pandas as pd
 from clickhouse_connect import driver as ch_driver
@@ -123,15 +122,29 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
     return ldf
 
 
-def extract(
+def transform(
     sap_ost: pd.DataFrame, c1_ost: pd.DataFrame, sap_ost2: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Преобразование данных для отчета
 
+    Args:
+        sap_ost (pd.DataFrame): Фрейм с остатками SAP
+        c1_ost (pd.DataFrame): Фрейм с остатками 1с
+        sap_ost2 (pd.DataFrame): Фрейм с остатками SAP выгружаемые запасы
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame]: Возвращает 2 фрейма. соединенные остатки и потерянные строки
+    """
     # сбросить строки в которых не заполнен КСМ
     c1_ost = c1_ost.dropna(subset="КСМ")
 
     # обрезать нули слева
     c1_ost["КСМ"] = c1_ost["КСМ"].str.lstrip("0")
+
+    # добавление кода склада в выгрузку остатков 1с
+    c1_ost.loc[c1_ost["Склад / Контрагент / Работник"].isna(), "Код склада SAP"] = (
+        "####"
+    )
 
     # сформировать ключ для слияния
     c1_ost["key"] = (
@@ -172,8 +185,9 @@ def extract(
         right_on="key",
     )
     # c1_ost.to_parquet("c1_ost.parquet")
-    # print("запись временного файла")
+    print("запись временного файла")
     # c1_ost.to_excel("c1_ost.xlsx", index=False)
+    sap_ost.to_excel("sap_ost.xlsx", index=False)
 
     # перенос данных из выгружаемых запасов "ДатПервПст" в выгрузку 1с
     # print(c1_ost.dtypes)
@@ -192,7 +206,6 @@ def extract(
     )
 
     mask = c1_ost["Наименование подразделения"].isna()
-
     c1_ost.loc[mask, "Наименование подразделения"] = c1_ost[
         "Склад / Контрагент / Работник"
     ]
@@ -227,11 +240,38 @@ def extract(
         "Наименование категории запаса"
     ].fillna("Запасы под потребность текущего периода")
 
+    # добавление
+    date3y = pd.to_datetime(date(datetime.now().year - 3, 12, 31))
+    c1_ost.loc[
+        c1_ost["ДатаПервПост"] <= date3y, "Конечная сумма более 3х лет (без НДС)"
+    ] = c1_ost["Конечный остаток_Сумма (без НДС)"]
+    c1_ost.loc[
+        c1_ost["ДатаПервПост"] <= date3y, "Начальная сумма более 3х лет (без НДС)"
+    ] = c1_ost["Начальный остаток_Сумма (без НДС)"]
+
+    param_sum = [
+        "Конечный остаток_Сумма (без НДС)",
+        "Конечный остаток_Итого с ТЗР (без НДС)",
+        "Начальная сумма более 3х лет (без НДС)",
+        "Конечная сумма более 3х лет (без НДС)",
+    ]
+    # в колонках суммирования заменить na на нули
+    c1_ost[param_sum] = c1_ost[param_sum].fillna(0.0)
+
+    c1_ost["Изм 3х леток"] = (
+        c1_ost["Конечная сумма более 3х лет (без НДС)"]
+        - c1_ost["Начальная сумма более 3х лет (без НДС)"]
+    )
+
     # вывести результат в файл
     print("Датафрейм для записи в выходной файл:")
     print(c1_ost.info())
 
-    lost = sap_ost[~sap_ost["key"].isin(c1_ost["key"])]
+    # потеряшки это строки с остатком которых не нашли в sap
+    # "Конечный остаток_Итого с ТЗР (без НДС)"
+    lost = c1_ost[
+        (c1_ost["Конечный остаток_Итого с ТЗР (без НДС)"] > 0.0) & (c1_ost["БЕ"].isna())
+    ]
 
     # фильтр по "Наименование подразделения"
     podr_sap = [
@@ -244,18 +284,13 @@ def extract(
         "ОИТ",
     ]
 
-    manager = [
-        "Менеджер УМАИТиТ ОТ",
-        "Менеджер УМАИТиТ ОАСУТП",
-        "Менеджер УМАИТиТ ОИТ",
-    ]
-    # выборка по фильтрам
+    # выборка по фильтрам для не найденных в sap позиций
     lost_warn = lost[
-        lost["Наименование подразделения"].isin(podr_sap)
-        | lost["ФИО менеджера"].isin(manager)
+        (lost["Наименование подразделения"].isin(podr_sap))
+        & (lost["ДатаПервПост"].isna())
     ]
 
-    return c1_ost, lost, lost_warn
+    return c1_ost, lost_warn
 
 
 def load_mol_excel(
@@ -406,28 +441,31 @@ def pdread_c1(DATA_C1) -> tuple[pd.DataFrame, str]:
 
 def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     """
-    формирование сводной таблицы и вывод в excel файл с расшифровками по уровням.
-    Перечень параметров:
-    params = {
-        "writer": gl_writer,
-        "страница": "Суммы",
-        "начстрока": downrows,
-        "начколонка": 0,
-        "pivot_ind": ["Наименование подразделения", "Вид деят"],
-        "pivot_sum": ["Расход. Сумма (без НДС)", "Остаток (без НДС)"],
-        #параметр display - перечень колонок для вывода в отчет. Если будет пустой выведет все колонки.
-        "display": [
-            "Наименование подразделения",
-            "Вид деят",
-            "Расход (шт)",
-            "Расход. Сумма (без НДС)",
-            "Остаток (шт)",
-            "Остаток (без НДС)",
-        ],
-        "префиксл": "Расх",
-        "tablename": "итог",  # имя добавляемой таблицы
-        "linkcol": "Наименование подразделения",  # колонка для которой делать гиперссылки
-    }
+    Формирование сводной таблицы и вывод в excel файл с расшифровками по уровням.
+
+    Args:
+        mol_pd (pd.DataFrame): Фрейм с данными
+
+        param (dict): Cловарь с параметрами. формат= {
+            "writer": gl_writer,
+            "страница": "Суммы",
+            "начстрока": downrows,
+            "начколонка": 0,
+            "pivot_ind": ["Наименование подразделения", "Вид деят"],
+            "pivot_sum": ["Расход. Сумма (без НДС)", "Остаток (без НДС)"],
+            #параметр display - перечень колонок для вывода в отчет. Если будет пустой выведет все колонки.
+            "display": [
+                "Наименование подразделения",
+                "Вид деят",
+                "Расход (шт)",
+                "Расход. Сумма (без НДС)",
+                "Остаток (шт)",
+                "Остаток (без НДС)",
+            ],
+            "префиксл": "Расх",
+            "tablename": "итог",  # имя добавляемой таблицы
+            "linkcol": "Наименование подразделения",  # колонка для которой делать гиперссылки
+        }
     Возвращает высоту выведённой таблицы
     """
     global gl_format1, gl_link_format, gl_back_addr
@@ -597,6 +635,7 @@ def report(
         "Единица измерения",
         "Склад / Контрагент / Работник",
         "Начальный остаток_Количество",
+        "Начальный остаток_Сумма (без НДС)",
         "Приход_Количество",
         "Приход_Сумма (без НДС)",
         "Приход_в т.ч. сумма доп. расходов",
@@ -624,6 +663,9 @@ def report(
         "ПрзСрВвлЗп",
         "ДатаПервПост",
         "Вид деят 1с",
+        "Начальная сумма более 3х лет (без НДС)",
+        "Конечная сумма более 3х лет (без НДС)",
+        "Изм 3х леток",
     ]
     dfl_s = dfl[goodlist]
 
@@ -650,13 +692,6 @@ def report(
         | dfl_s["Склад / Контрагент / Работник"].isin(mol_1c)
     ]
 
-    date3y = pd.to_datetime(date(datetime.now().year - 3, 12, 31))
-    dfl_s.loc[dfl_s["ДатаПервПост"] <= date3y, "Сумма более 3х лет (без НДС)"] = dfl_s[
-        "Конечный остаток_Сумма (без НДС)"
-    ]
-
-    # df.loc[df['ConditionCol'] > 10, 'TargetCol'] = df['SourceCol']
-
     # записать в excel выборку колонок
     dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
 
@@ -676,10 +711,11 @@ def report(
     param_sum = [
         "Конечный остаток_Сумма (без НДС)",
         "Конечный остаток_Итого с ТЗР (без НДС)",
-        "Сумма более 3х лет (без НДС)",
+        "Начальная сумма более 3х лет (без НДС)",
+        "Конечная сумма более 3х лет (без НДС)",
+        "Изм 3х леток",
     ]
-    # в колонках суммирования заменить na на нули
-    dfl_s[param_sum] = dfl_s[param_sum].fillna(0.0)
+
     param_ind = [
         "Наименование подразделения",
         "Вид деят 1с",
@@ -687,21 +723,6 @@ def report(
         # "ФИО менеджера",
         "Наименование категории запаса",
     ]
-
-    # свертка по подразделениям
-    # table = pd.pivot_table(
-    #     dfl_s,
-    #     values=param_sum,
-    #     # "pivot_sum": ["Расход. Сумма (без НДС)", "Остаток (без НДС)"],
-    #     index=param_ind,
-    #     # "pivot_ind": ["Наименование подразделения", "Вид деят"],
-    #     aggfunc="sum",
-    #     # dropna=False,
-    # )
-    # table = table.reindex(param_sum, axis=1)
-    # table.reset_index(inplace=True)
-    # table.to_excel(gl_writer, sheet_name="Сводная", index=False)
-    # workbook.get_worksheet_by_name("Сводная").autofit()  # type: ignore
 
     params = {
         "writer": gl_writer,
@@ -771,7 +792,7 @@ def start_parellel():
         timer("Чтение завершено.", startTime)
 
         # слияние и поиск строк не найденных в 1С
-        c1_ost, lostrows, lost_warn = extract(results[0], results[1][0], results[2])  # type: ignore
+        c1_ost, lost_warn = transform(results[0], results[1][0], results[2])  # type: ignore
 
         # ===блок вывода промежуточных файлов для отладки
         # mol_file = results[1][1]  # type: ignore
@@ -824,9 +845,6 @@ def start_parellel():
     gl_writer = initexcel(repfile)
     lost_warn.to_excel(
         gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
-    )
-    lostrows.to_excel(
-        gl_writer, sheet_name="lostrows", index=False, engine="xlsxwriter"
     )
 
     startTime = timer(name="Формирование выборки")

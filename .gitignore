@@ -7,6 +7,7 @@ wheels/
 *.egg-info
 data/
 out/
+dataplan/
 C1_in/
 SAP_in/
 дпм/
@@ -18,3 +19,4 @@ uv.lock
 act.ini
 вырезка/~$1с-2026-02-вырезка.xlsx
 вырезка/1с-2026-02-вырезка.xlsx
+sap_ost.xlsx
