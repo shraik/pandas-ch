@@ -405,16 +405,18 @@ def loadinit() -> configparser.ConfigParser:
     return config
 
 
-def pdread_sap(DATA_SAP) -> pd.DataFrame:
+def pdread_sap(DATA_SAP: str) -> pd.DataFrame:
     """Для использования с joblib. Загрузка файла SAP"""
     print("--выбираем файл с остатками SAP---")
     filesap = find_latest_file(DATA_SAP, "*.xlsx")
 
-    print(f"--читаем SAP файл:\n{filesap}")
-    return pd.read_excel(filesap, engine="calamine")
+    print(f"--читаем SAP файл: {filesap}")
+    res = pd.read_excel(filesap, engine="calamine")
+    print(f"--SAP файл прочитан: {filesap}")
+    return res
 
 
-def pdread_c1(DATA_C1) -> tuple[pd.DataFrame, str]:
+def pdread_c1(DATA_C1: str) -> tuple[pd.DataFrame, str]:
     """Для использования с joblib. Загрузка файла ОСВ"""
     print("--выбираем файл с остатками ОСВ---")
     mol_file = find_latest_file(DATA_C1, "*.xlsx")
@@ -425,18 +427,23 @@ def pdread_c1(DATA_C1) -> tuple[pd.DataFrame, str]:
         print("Не удалось найти необходимые файлы данных. Выход.")
         sys.exit(0)
 
-    return load_mol_excel(
-        {
-            "Счет_": "Счет",
-            "КСМ_": "КСМ",
-            "Код склада SAP_": "Код склада SAP",
-            "Партия SAP_": "Партия SAP",
-        },
-        [9, 10],
+    res = (
+        load_mol_excel(
+            {
+                "Счет_": "Счет",
+                "КСМ_": "КСМ",
+                "Код склада SAP_": "Код склада SAP",
+                "Партия SAP_": "Партия SAP",
+            },
+            [9, 10],
+            mol_file,
+            only_selected=False,
+            drop_un=True,
+        ),
         mol_file,
-        only_selected=False,
-        drop_un=True,
-    ), mol_file
+    )
+    print(f"--ОСВ файл прочитан: {mol_file}")
+    return res
 
 
 def toe(mol_pd: pd.DataFrame, param: dict) -> int:
