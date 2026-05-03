@@ -185,9 +185,9 @@ def transform(
         right_on="key",
     )
     # c1_ost.to_parquet("c1_ost.parquet")
-    print("запись временного файла")
+    # print("запись временного файла")
     # c1_ost.to_excel("c1_ost.xlsx", index=False)
-    sap_ost.to_excel("sap_ost.xlsx", index=False)
+    # sap_ost.to_excel("sap_ost.xlsx", index=False)
 
     # перенос данных из выгружаемых запасов "ДатПервПст" в выгрузку 1с
     # print(c1_ost.dtypes)
@@ -499,8 +499,16 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         index=param["pivot_ind"][:2],
         aggfunc="sum",
     ).reindex(param["pivot_sum"], axis=1)
-    # itogt
     itogt.reset_index(inplace=True)
+
+    itogt2 = pd.pivot_table(
+        table,
+        values=param["pivot_sum"],
+        # index=param["pivot_ind"][0],
+        index=param["pivot_ind"][1:2],
+        aggfunc="sum",
+    ).reindex(param["pivot_sum"], axis=1)
+    itogt2.reset_index(inplace=True)
 
     for row in table.itertuples():
         # сборка фильтров для вывода фреймов расшифровок
@@ -541,7 +549,6 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         )
 
     namet = "Table" + param["префиксл"]
-    # column_settings = [{"header": column} for column in table.columns]
 
     # формирование шаблона вывода для колонок, установка итоговой функции суммирования
     # для колонки с ссылками отдельный формат синим и без функции итога
@@ -553,11 +560,14 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         for column in table.columns
     ]
 
+    cur_row = param["начстрока"]
+    cur_col = param["начколонка"]
+
     worksheet.add_table(
-        param["начстрока"],
-        param["начколонка"],
-        param["начстрока"] + len(table.index) + 1,
-        param["начколонка"] + table.shape[1] - 1,
+        cur_row,
+        cur_col,
+        cur_row + len(table.index) + 1,
+        cur_col + table.shape[1] - 1,
         {
             "data": table.values,
             "columns": column_settings,
@@ -568,10 +578,12 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     )
 
     # вывод таблицы подитога
+    cur_row = cur_row + len(table.index) + 1
+
     param["writer"].book.get_worksheet_by_name(param["страница"]).write_string(
-        param["начстрока"] + len(table.index) + 2,
-        param["начколонка"] + table.shape[1] - itogt.shape[1],
-        "Итоги: ",
+        cur_row + 1,
+        cur_col + table.shape[1] - itogt.shape[1],
+        "Итоги по отделам: ",
     )
 
     column_settings = [
@@ -579,11 +591,15 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         for column in itogt.columns
     ]
 
+    cur_row += 2
+    # сдвиг левой границы на разницу в ширине таблиц
+    cur_col = cur_col + table.shape[1] - itogt.shape[1]
+
     worksheet.add_table(
-        param["начстрока"] + len(table.index) + 3,
-        param["начколонка"] + table.shape[1] - itogt.shape[1],
-        param["начстрока"] + len(table.index) + 3 + len(itogt.index) + 1,
-        param["начколонка"] + table.shape[1] - itogt.shape[1] + itogt.shape[1] - 1,
+        cur_row,
+        cur_col,
+        cur_row + len(itogt.index) + 1,
+        cur_col + itogt.shape[1] - 1,
         {
             "data": itogt.values,
             "columns": column_settings,
@@ -592,15 +608,39 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
             "total_row": True,
         },
     )
-    # itogt.to_excel(
-    #     param["writer"],
-    #     sheet_name=param["страница"],
-    #     startrow=param["начстрока"] + len(table.index) + 3,
-    #     startcol=param["начколонка"] + table.shape[1] - itogt.shape[1],
-    #     index=False,
-    # )
 
-    return len(table.index) + len(itogt.index) + 3
+    # вывод таблицы подитога2
+    cur_row = cur_row + len(itogt.index) + 2
+    cur_col += 1
+
+    param["writer"].book.get_worksheet_by_name(param["страница"]).write_string(
+        cur_row,
+        cur_col,
+        "Итоги по виду деятельности:",
+    )
+
+    cur_row += 1
+
+    column_settings = [
+        {"header": column, "total_function": "sum", "format": gl_format0}
+        for column in itogt2.columns
+    ]
+
+    worksheet.add_table(
+        cur_row,
+        cur_col,
+        cur_row + len(itogt2.index) + 1,
+        cur_col + itogt2.shape[1] - 1,
+        {
+            "data": itogt2.values,
+            "columns": column_settings,
+            "style": "Table Style Medium 9",
+            "name": namet + "total2",
+            "total_row": True,
+        },
+    )
+
+    return cur_row + len(itogt2.index) + 2
 
 
 def report(
@@ -621,11 +661,12 @@ def report(
     global gl_writer
 
     workbook = gl_writer.book
-    workbook.add_worksheet("base")  # type: ignore
-    workbook.add_worksheet("filter")  # type: ignore
     workbook.add_worksheet("Суммы")  # type: ignore
+    workbook.add_worksheet("filter")  # type: ignore
+    workbook.add_worksheet("base")  # type: ignore
 
     # записать в excel имеющиеся колонок
+    # выключено для ускорения вывода
     dfl.to_excel(gl_writer, sheet_name="base", index=False)
 
     goodlist = [
@@ -743,8 +784,6 @@ def report(
     }
 
     # вывод таблиц с расшифровками
-    # TODO добавить третью таблицу без разбивки по отделам
-
     toe(dfl_s, params)
 
     # автоподбор ширины колонок
@@ -753,8 +792,6 @@ def report(
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
     hyperlink(params)
-
-    # ====добавление листа с не синхронизированными строками
 
 
 def start_parellel():
@@ -783,9 +820,11 @@ def start_parellel():
     db_name = "db_pandas"
     gl_client = contc(db_name, hostip=serverip, port=int(serverport))
 
+    # выгрузка sap
     DATA_SAP = "SAP_in"
     # данные по месяцам
     DATA_SAP2 = "дпм"
+    # выгрузка 1С
     DATA_C1 = "C1_in"
 
     if load:
