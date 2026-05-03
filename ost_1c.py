@@ -320,9 +320,10 @@ def load_mol_excel(
 
     lisc = res.columns.to_list()
 
-    print(
-        f"Список прочитанных колонок в файле {str(Path(filename).resolve())}: {lisc}, \nколичество колонок: {len(lisc)}"
-    )
+    # print(
+    #     f"Список прочитанных колонок в файле {str(Path(filename).resolve())}: {lisc}, \nколичество колонок: {len(lisc)}"
+    # )
+    print(f"Прочитанных колонок в файле {str(Path(filename).resolve())}: {len(lisc)}")
     # список найденных имён колонок
     resl = []
     # дикт для переименования найденных колонок
@@ -347,7 +348,7 @@ def load_mol_excel(
     )
     if drop_un:
         pattern = r"_[A-z:\d{1,2} ]+"
-        print("\n", rf"Очистка имени колонок по шаблону '{pattern}'")
+        print(rf"Очистка имени колонок по шаблону '{pattern}'")
         res = res.rename(columns=lambda x: re.sub(pattern, "", x))
         # сбросить дубликаты колонок по именам, сохранив первую
         res = res.loc[:, ~res.columns.duplicated()]
@@ -405,15 +406,20 @@ def loadinit() -> configparser.ConfigParser:
     return config
 
 
-def pdread_sap(DATA_SAP: str) -> pd.DataFrame:
+def pdread_sap(DATA_SAP: str) -> tuple[pd.DataFrame, str]:
     """Для использования с joblib. Загрузка файла SAP"""
     print("--выбираем файл с остатками SAP---")
     filesap = find_latest_file(DATA_SAP, "*.xlsx")
 
-    print(f"--читаем SAP файл: {filesap}")
-    res = pd.read_excel(filesap, engine="calamine")
-    print(f"--SAP файл прочитан: {filesap}")
-    return res
+    if filesap is None:
+        print("Не удалось найти необходимые файлы данных. Выход")
+        sys.exit(0)
+    else:
+        print(f"--читаем SAP файл: {filesap}")
+        res = pd.read_excel(filesap, engine="calamine")
+        print(f"--SAP файл прочитан: {filesap}")
+
+    return res, filesap
 
 
 def pdread_c1(DATA_C1: str) -> tuple[pd.DataFrame, str]:
@@ -652,6 +658,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
 
 def report(
     dfl: pd.DataFrame,
+    files: tuple,
     toch=False,
     client: Optional[ch_driver.Client] = None,
     tablename="c1_ost_filter",
@@ -782,13 +789,30 @@ def report(
     params = {
         "writer": gl_writer,
         "страница": "Суммы",
-        "начстрока": 0,
+        "начстрока": 4,
         "начколонка": 0,
         "pivot_ind": param_ind,
         "pivot_sum": param_sum,
         "префиксл": "Расх",
         "linkcol": "Наименование подразделения",
     }
+
+    wss = gl_writer.book.get_worksheet_by_name("Суммы")  # type: ignore
+    wss.write_string(  # type: ignore
+        0,
+        0,
+        f"Остатки из файла: {files[0]}",
+    )
+    wss.write_string(  # type: ignore
+        1,
+        0,
+        f"Дата прихода и распределение центральных складов из файла : {files[1]}",
+    )
+    wss.write_string(  # type: ignore
+        2,
+        0,
+        f"Дата прихода по складам МОЛ из файла: {files[2]}",
+    )
 
     # вывод таблиц с расшифровками
     toe(dfl_s, params)
@@ -847,7 +871,7 @@ def start_parellel():
         timer("Чтение завершено.", startTime)
 
         # слияние и поиск строк не найденных в 1С
-        c1_ost, lost_warn = transform(results[0], results[1][0], results[2])  # type: ignore
+        c1_ost, lost_warn = transform(results[0][0], results[1][0], results[2][0])  # type: ignore
 
         # ===блок вывода промежуточных файлов для отладки
         # mol_file = results[1][1]  # type: ignore
@@ -904,7 +928,10 @@ def start_parellel():
 
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
-    report(c2_df, toch=True, client=gl_client, tablename="c1_ost_filter")
+    gotfiles = (results[0][1], results[1][1], results[2][1])  # type: ignore
+    report(
+        c2_df, files=gotfiles, toch=True, client=gl_client, tablename="c1_ost_filter"
+    )
     timer("Формирование выборки", startTime)
 
     if gl_client.ping():
