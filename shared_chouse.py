@@ -169,7 +169,7 @@ def contc(
             )
             client = clickhouse_connect.get_client(
                 host=hostip,
-                port=8123,
+                port=port,
                 username="default",
                 password="",  # Your password, if any
                 database="default",
@@ -177,7 +177,7 @@ def contc(
             client.command(f"CREATE DATABASE {dbname}")
             client = clickhouse_connect.get_client(
                 host=hostip,
-                port=8123,
+                port=port,
                 username="default",
                 password="",  # Your password, if any
                 database=dbname,

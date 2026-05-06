@@ -8,7 +8,8 @@ from python_calamine import CalamineWorkbook
 
 from os import walk, environ as int_env, scandir, stat as stat_file
 from sqlalchemy import create_engine, inspect
-from sqlalchemy_cratedb.support import insert_bulk
+
+# from sqlalchemy_cratedb.support import insert_bulk
 import sqlalchemy as sa
 
 if dict(int_env).get("AIRFLOW_HOME", None) is not None:
@@ -231,6 +232,9 @@ def loadsettings3(
             listd = filter.get("СброситьЗ", []) + za_drop
             filter.update({"СброситьЗ": listd})
 
+        # переименование чужих заявок чтобы они попали в отбор
+        df_zai["item"] = df_zai["item"].replace({"заявкач": "заявка"}, regex=True)
+
         # добавление списка на рекласс
         for ii in ["МТР", "ОНСС"]:
             za_rcls = df_zai[(df_zai["item"] == "заявка") & (df_zai["toonss"] == ii)][
@@ -246,9 +250,6 @@ def loadsettings3(
         df_cfg["otdel"] = local_pref
         # df_zai["year_d"] = ""
         df_zai["otdel"] = local_pref
-
-        # переименование чужих заявок чтобы они попали в отбор
-        df_zai["item"] = df_zai["item"].replace({"заявкач": "заявка"}, regex=True)
 
         # удаляем строки не входящие в шаблоны настроек
         dropv = [
@@ -429,19 +430,20 @@ def saveframe(
     # чтобы не испортить фрейм переименованием заголовка при записи
     rename_flag = False
 
-    if conn.engine.driver == "crate-python":
+    # if conn.engine.driver == "crate-python":
+    if False:
         # замена точек в наименовании колонок на шаблон
         frame.columns = frame.columns.str.replace(".", "_ТЧК_")
         rename_flag = True
 
-        frame.to_sql(
-            tn,
-            conn,
-            if_exists=modes,
-            index=False,
-            method=insert_bulk,
-        )
-        conn.exec_driver_sql(f"REFRESH TABLE {tn};")
+        # frame.to_sql(
+        #     tn,
+        #     conn,
+        #     if_exists=modes,
+        #     index=False,
+        #     method=insert_bulk,
+        # )
+        # conn.exec_driver_sql(f"REFRESH TABLE {tn};")
     else:
         frame.to_sql(
             tn,
