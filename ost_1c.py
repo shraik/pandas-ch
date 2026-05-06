@@ -81,7 +81,7 @@ def hyperlink(param):
 
 def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
 
-    ldf["ЗапасМен"] = ldf["ЗапасМен"].astype("str")
+    # ldf["ЗапасМен"] = ldf["ЗапасМен"].astype("str")
 
     # набор колонок для перобразования в числовой тип
     to_digit = [
@@ -153,6 +153,15 @@ def transform(
     sap_ost["key"] = (
         sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
     )
+    # сортировка и сброс дубликатов по партиям
+    # sap_ost = sap_ost.sort_values(by="ДатаПервПост", ascending=False).drop_duplicates(
+    sap_ost = sap_ost.sort_values(by="ПервДатПр", ascending=False).drop_duplicates(
+        subset="key", keep="first"
+    )
+
+    # print("запись временного файла sap_ost")
+    # # c1_ost.to_excel("c1_ost.xlsx", index=False)
+    # sap_ost.to_excel("sap_ost.xlsx", index=False)
 
     # подготовка таблицы с выгружаемыми запасами к слиянию
     # сортировать по дате и оставлять только первую строку для каждого ключа
@@ -161,6 +170,10 @@ def transform(
         + sap_ost2["Код КСМ"].astype("string")
         + sap_ost2["Партия"]
     )
+    # print("запись временного файла sap_ost2")
+    # c1_ost.to_excel("c1_ost.xlsx", index=False)
+    # sap_ost2.to_excel("sap_ost2.xlsx", index=False)
+
     sap_ost2 = (
         sap_ost2[["key", "ДатПервПст"]]  # pyright: ignore[reportCallIssue]
         .sort_values(by="ДатПервПст", ascending=False)
@@ -191,6 +204,12 @@ def transform(
 
     # перенос данных из выгружаемых запасов "ДатПервПст" в выгрузку 1с
     # print(c1_ost.dtypes)
+    # c1_ost["ДатаПервПост"] = pd.to_datetime(c1_ost["ДатаПервПост"], errors="coerce")
+    c1_ost.rename(
+        columns={"ПервДатПр": "ДатаПервПост", "Обозначение": "Обознач. склада"},
+        inplace=True,
+    )
+    c1_ost["ДатаПервПост"] = pd.to_datetime(c1_ost["ДатаПервПост"], errors="coerce")
     mask = c1_ost["ДатаПервПост"].isna()
     c1_ost.loc[mask, "ДатаПервПост"] = c1_ost["ДатПервПст"]
 
@@ -390,7 +409,7 @@ def loadinit() -> configparser.ConfigParser:
     try:
         with open(config_file_path, "r") as f:
             config.read_file(f)
-    except FileNotFoundError, configparser.MissingSectionHeaderError:
+    except (FileNotFoundError, configparser.MissingSectionHeaderError):
         config["DEFAULT"] = {
             "file1": r"R:\source\python\Python-xls\data\склады\2026-02-28\все мтр на_27.02.2026.xlsx",
             "file2": r"R:\source\python\Python-xls\data\склады\2026-02-28\Лист в ALVXXL01 (1).xlsx",
@@ -789,7 +808,7 @@ def report(
     params = {
         "writer": gl_writer,
         "страница": "Суммы",
-        "начстрока": 4,
+        "начстрока": 5,
         "начколонка": 0,
         "pivot_ind": param_ind,
         "pivot_sum": param_sum,
@@ -797,22 +816,16 @@ def report(
         "linkcol": "Наименование подразделения",
     }
 
-    wss = gl_writer.book.get_worksheet_by_name("Суммы")  # type: ignore
-    wss.write_string(  # type: ignore
-        0,
-        0,
-        f"Остатки из файла: {files[0]}",
-    )
-    wss.write_string(  # type: ignore
-        1,
-        0,
-        f"Дата прихода и распределение центральных складов из файла : {files[1]}",
-    )
-    wss.write_string(  # type: ignore
-        2,
-        0,
+    listmessage = (
+        f"Остатки из файла: {files[1]}",
+        f"Дата прихода и распределение центральных складов из файла: {files[0]}",
         f"Дата прихода по складам МОЛ из файла: {files[2]}",
+        f"Всё что пришло {date(datetime.now().year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками.",
     )
+
+    wss = gl_writer.book.get_worksheet_by_name("Суммы")  # type: ignore
+    if wss is not None:
+        wss.write_column(0, 0, listmessage)
 
     # вывод таблиц с расшифровками
     toe(dfl_s, params)
