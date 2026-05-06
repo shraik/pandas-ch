@@ -409,7 +409,7 @@ def loadinit() -> configparser.ConfigParser:
     try:
         with open(config_file_path, "r") as f:
             config.read_file(f)
-    except (FileNotFoundError, configparser.MissingSectionHeaderError):
+    except FileNotFoundError, configparser.MissingSectionHeaderError:
         config["DEFAULT"] = {
             "file1": r"R:\source\python\Python-xls\data\склады\2026-02-28\все мтр на_27.02.2026.xlsx",
             "file2": r"R:\source\python\Python-xls\data\склады\2026-02-28\Лист в ALVXXL01 (1).xlsx",
@@ -933,7 +933,7 @@ def start_parellel():
     print("====считанная таблица====")
     c2_df.info()
 
-    repfile = "out/report.xlsx"
+    repfile = "out/report_.xlsx"
     gl_writer = initexcel(repfile)
     lost_warn.to_excel(
         gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
