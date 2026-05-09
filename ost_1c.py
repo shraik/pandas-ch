@@ -24,6 +24,7 @@ gl_writer: pd.ExcelWriter
 gl_link_format = None
 gl_format1 = None
 gl_format0 = None
+gl_wrap_format = None
 gl_back_addr = {}
 
 
@@ -36,7 +37,7 @@ def initexcel(pathtofile: str):
     Returns:
         pd.ExcelWriter: Excel writer.
     """
-    global gl_format0, gl_format1, gl_link_format
+    global gl_format0, gl_format1, gl_link_format, gl_wrap_format
 
     # проверка и создание выходного каталога
     folder_path = Path(pathtofile).parents[0]
@@ -50,10 +51,11 @@ def initexcel(pathtofile: str):
         datetime_format="dd/mm/yyyy",
         # engine_kwargs={"options": {"strings_to_urls": True}},
     )
-    gl_format1 = writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})  # type: ignore
-    gl_format0 = writer.book.add_format({"num_format": "#,##0;-#,##0;-"})  # type: ignore
+    gl_format1 = writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})
+    gl_format0 = writer.book.add_format({"num_format": "#,##0;-#,##0;-"})
+    gl_wrap_format = writer.book.add_format({"text_wrap": True, "valign": "top"})
 
-    gl_link_format = writer.book.get_default_url_format()  # type: ignore
+    gl_link_format = writer.book.get_default_url_format()
     gl_link_format.set_align("center")
     gl_link_format.set_bold()
 
@@ -408,9 +410,9 @@ def find_latest_file(directory: str, pattern: str) -> str | None:
             return None
 
         latest_file = max(files, key=lambda p: p.stat().st_mtime)
-        print(
-            f"Найден самый новый файл по шаблону '{pattern}' в каталоге '{directory}':\n{str(Path(latest_file).resolve())}"
-        )
+        # print(
+        #     f"\nНайден самый новый файл по шаблону '{pattern}' в каталоге '{directory}':\n{str(Path(latest_file).resolve())}"
+        # )
         return str(latest_file)
     except FileNotFoundError:
         print(f"Ошибка: Каталог '{directory}' не найден.")
@@ -464,7 +466,7 @@ def pdread_c1(DATA_C1: str) -> tuple[pd.DataFrame, str]:
     print("--выбираем файл с остатками ОСВ---")
     mol_file = find_latest_file(DATA_C1, "*.xlsx")
 
-    print(f"--читаем ОСВ файл:\n{mol_file}")
+    print(f"--читаем ОСВ файл: {mol_file}")
 
     if not mol_file:
         print("Не удалось найти необходимые файлы данных. Выход.")
@@ -602,11 +604,21 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
 
     # формирование шаблона вывода для колонок, установка итоговой функции суммирования
     # для колонки с ссылками отдельный формат синим и без функции итога
+
     column_settings = [
-        {"header": column, "total_function": "sum", "format": gl_format0}
+        {
+            "header": column,
+            "total_function": "sum",
+            "format": gl_format0,
+            "header_format": gl_wrap_format,
+        }
         if column
         != param.get("linkcol", "--строка которая не попадется в наименованиях--")
-        else {"header": column, "format": gl_link_format}
+        else {
+            "header": column,
+            "format": gl_link_format,
+            "header_format": gl_wrap_format,
+        }
         for column in table.columns
     ]
 
@@ -637,7 +649,12 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     )
 
     column_settings = [
-        {"header": column, "total_function": "sum", "format": gl_format0}
+        {
+            "header": column,
+            "total_function": "sum",
+            "format": gl_format0,
+            "header_format": gl_wrap_format,
+        }
         for column in itogt.columns
     ]
 
@@ -672,7 +689,12 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     cur_row += 1
 
     column_settings = [
-        {"header": column, "total_function": "sum", "format": gl_format0}
+        {
+            "header": column,
+            "total_function": "sum",
+            "format": gl_format0,
+            "header_format": gl_wrap_format,
+        }
         for column in itogt2.columns
     ]
 
@@ -718,7 +740,7 @@ def report(
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
-    dfl.to_excel(gl_writer, sheet_name="base", index=False)
+    # dfl.to_excel(gl_writer, sheet_name="base", index=False)
 
     goodlist = [
         "Счет",
@@ -853,7 +875,7 @@ def report(
         # вывод таблиц с расшифровками
         toe(dfl_s, params)
         wss.autofit()
-        wss.set_column(0, 0, 30)
+        wss.set_column(0, 0, 14)
 
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
