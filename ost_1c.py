@@ -876,6 +876,7 @@ def report(
         toe(dfl_s, params)
         wss.autofit()
         wss.set_column(0, 0, 14)
+        wss.set_column(4, 9, 24)
 
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
