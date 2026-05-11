@@ -4,12 +4,14 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
+from numpy import nan as NP_NAN
 
 import pandas as pd
 from clickhouse_connect import driver as ch_driver
 from joblib import Parallel, delayed
 
-# from xlsxwriter import workbook
+from xlsxwriter.worksheet import Worksheet
+
 from shared_chouse import (
     contc,
     # save_file_data_ch,
@@ -26,6 +28,23 @@ gl_format1 = None
 gl_format0 = None
 gl_wrap_format = None
 gl_back_addr = {}
+
+
+def save_ws(ldf: pd.DataFrame, ws: Worksheet):
+    """Построчный вывод датафрейма в эксель лист. Работает более быстро для больших фреймов (более ~300 строк).
+
+    Args:
+        ldf (pd.DataFrame): Фрейм для вывода
+        ws (Worksheet): Страница для вывода. Страница должна быть создана заранее.
+    """
+    # ldf = ldf.fillna(np.nan).replace({np.nan: None})
+    ldf = ldf.fillna(NP_NAN).replace({NP_NAN: None})
+
+    index = 1
+    ws.write_row(0, 0, ldf.columns.to_list())
+    for row in ldf.itertuples(name=None):
+        ws.write_row(index, 0, list(row)[1:])
+        index += 1
 
 
 def initexcel(pathtofile: str):
@@ -585,9 +604,10 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
             index=False,
         )
 
-        wsl = gl_writer.book.get_worksheet_by_name(sheetname)  # type: ignore
-        wsl.set_column(3, 4, 18, gl_format1)  # type: ignore
-        wsl.autofit()  # type: ignore
+        # форматирование листов расшифровок отключено
+        # wsl = gl_writer.book.get_worksheet_by_name(sheetname)  # type: ignore
+        # wsl.set_column(3, 4, 18, gl_format1)  # type: ignore
+        # wsl.autofit()  # type: ignore
 
         table.at[row.Index, param["pivot_ind"][0]] = (
             "=HYPERLINK(\"#'"
@@ -734,13 +754,16 @@ def report(
     global gl_writer
 
     workbook = gl_writer.book
-    workbook.add_worksheet("Суммы")  # type: ignore
-    workbook.add_worksheet("filter")  # type: ignore
-    workbook.add_worksheet("base")  # type: ignore
+    wssumm = workbook.add_worksheet("Суммы")  # type: ignore
+    wsfilter = workbook.add_worksheet("filter")  # type: ignore
+    wsbase = workbook.add_worksheet("base")  # type: ignore
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
+    # обычный вывод
     # dfl.to_excel(gl_writer, sheet_name="base", index=False)
+    # оптимизированный вывод
+    save_ws(dfl, wsbase)  # type: ignore
 
     goodlist = [
         "Счет",
@@ -810,7 +833,8 @@ def report(
     ]
 
     # записать в excel выборку колонок
-    dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
+    # dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
+    save_ws(dfl_s, wsfilter)
 
     if toch and client is not None:
         intoclickhouse(
@@ -825,10 +849,6 @@ def report(
         print("Report. Запись отфильтрованной таблицы в clickhouse отключена.")
 
     # генерация и вывод сводной
-
-    # Освоение_Итого с ТЗР (без НДС)
-    # Расход_в т.ч. сумма доп. расходов
-
     param_sum = [
         "Освоение_Итого с ТЗР (без НДС)",
         # "Расход_в т.ч. сумма доп. расходов",
@@ -868,15 +888,13 @@ def report(
         f"Всё что пришло {date(datetime.now().year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками.",
     )
 
-    wss = gl_writer.book.get_worksheet_by_name("Суммы")  # type: ignore
-    if wss is not None:
-        wss.write_column(0, 0, listmessage)
-        # автоподбор ширины колонок
-        # вывод таблиц с расшифровками
-        toe(dfl_s, params)
-        wss.autofit()
-        wss.set_column(0, 0, 14)
-        wss.set_column(4, 9, 24)
+    wssumm.write_column(0, 0, listmessage)
+    # автоподбор ширины колонок
+    # вывод таблиц с расшифровками
+    toe(dfl_s, params)
+    wssumm.autofit()
+    wssumm.set_column(0, 0, 14)
+    wssumm.set_column(4, 9, 24)
 
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
