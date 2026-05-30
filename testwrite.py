@@ -40,13 +40,6 @@ def save_22(ldf: pd.DataFrame, pathtofile: str, time):
     workbook.close()
 
 
-def save_3(ldf: pd.DataFrame, pathtofile: str):
-
-    from rustpy_xlsxwriter import FastExcel
-
-    FastExcel(pathtofile).sheet("Data", ldf).save()
-
-
 # gst = timer("===запуск чтения parquet файла")
 df = pd.read_parquet("base.parquet")
 df.info()

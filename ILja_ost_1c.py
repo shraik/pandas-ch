@@ -4,12 +4,14 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
+from numpy import nan as NP_NAN
 
 import pandas as pd
 from clickhouse_connect import driver as ch_driver
 from joblib import Parallel, delayed
 
-# from xlsxwriter import workbook
+from xlsxwriter.worksheet import Worksheet
+
 from shared_chouse import (
     contc,
     # save_file_data_ch,
@@ -24,7 +26,25 @@ gl_writer: pd.ExcelWriter
 gl_link_format = None
 gl_format1 = None
 gl_format0 = None
+gl_wrap_format = None
 gl_back_addr = {}
+
+
+def save_ws(ldf: pd.DataFrame, ws: Worksheet):
+    """Построчный вывод датафрейма в эксель лист. Работает более быстро для больших фреймов (более ~300 строк).
+
+    Args:
+        ldf (pd.DataFrame): Фрейм для вывода
+        ws (Worksheet): Страница для вывода. Страница должна быть создана заранее.
+    """
+    # ldf = ldf.fillna(np.nan).replace({np.nan: None})
+    ldf = ldf.fillna(NP_NAN).replace({NP_NAN: None})
+
+    index = 1
+    ws.write_row(0, 0, ldf.columns.to_list())
+    for row in ldf.itertuples(name=None):
+        ws.write_row(index, 0, list(row)[1:])
+        index += 1
 
 
 def initexcel(pathtofile: str):
@@ -36,7 +56,7 @@ def initexcel(pathtofile: str):
     Returns:
         pd.ExcelWriter: Excel writer.
     """
-    global gl_format0, gl_format1, gl_link_format
+    global gl_format0, gl_format1, gl_link_format, gl_wrap_format
 
     # проверка и создание выходного каталога
     folder_path = Path(pathtofile).parents[0]
@@ -50,10 +70,11 @@ def initexcel(pathtofile: str):
         datetime_format="dd/mm/yyyy",
         # engine_kwargs={"options": {"strings_to_urls": True}},
     )
-    gl_format1 = writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})  # type: ignore
-    gl_format0 = writer.book.add_format({"num_format": "#,##0;-#,##0;-"})  # type: ignore
+    gl_format1 = writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})
+    gl_format0 = writer.book.add_format({"num_format": "#,##0;-#,##0;-"})
+    gl_wrap_format = writer.book.add_format({"text_wrap": True, "valign": "top"})
 
-    gl_link_format = writer.book.get_default_url_format()  # type: ignore
+    gl_link_format = writer.book.get_default_url_format()
     gl_link_format.set_align("center")
     gl_link_format.set_bold()
 
@@ -123,14 +144,14 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
 
 
 def transform(
-    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame, sap_ost2: pd.DataFrame
+    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Преобразование данных для отчета
 
     Args:
         sap_ost (pd.DataFrame): Фрейм с остатками SAP
         c1_ost (pd.DataFrame): Фрейм с остатками 1с
-        sap_ost2 (pd.DataFrame): Фрейм с остатками SAP выгружаемые запасы
+        # sap_ost2 (pd.DataFrame): Фрейм с остатками SAP выгружаемые запасы
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: Возвращает 2 фрейма. соединенные остатки и потерянные строки
@@ -165,20 +186,20 @@ def transform(
 
     # подготовка таблицы с выгружаемыми запасами к слиянию
     # сортировать по дате и оставлять только первую строку для каждого ключа
-    sap_ost2["key"] = (
-        sap_ost2["КодСклада"]
-        + sap_ost2["Код КСМ"].astype("string")
-        + sap_ost2["Партия"]
-    )
+    # sap_ost2["key"] = (
+    #     sap_ost2["КодСклада"]
+    #     + sap_ost2["Код КСМ"].astype("string")
+    #     + sap_ost2["Партия"]
+    # )
     # print("запись временного файла sap_ost2")
     # c1_ost.to_excel("c1_ost.xlsx", index=False)
     # sap_ost2.to_excel("sap_ost2.xlsx", index=False)
 
-    sap_ost2 = (
-        sap_ost2[["key", "ДатПервПст"]]  # pyright: ignore[reportCallIssue]
-        .sort_values(by="ДатПервПст", ascending=False)
-        .drop_duplicates(subset="key", keep="first")
-    )
+    # sap_ost2 = (
+    #     sap_ost2[["key", "ДатПервПст"]]  # pyright: ignore[reportCallIssue]
+    #     .sort_values(by="ДатПервПст", ascending=False)
+    #     .drop_duplicates(subset="key", keep="first")
+    # )
 
     # слияние
     c1_ost = pd.merge(
@@ -190,28 +211,47 @@ def transform(
     )
 
     # слияние с выгружаемыми запасами
-    c1_ost = pd.merge(
-        left=c1_ost,
-        right=sap_ost2,
-        how="left",
-        left_on="key",
-        right_on="key",
-    )
+    # c1_ost = pd.merge(
+    #     left=c1_ost,
+    #     right=sap_ost2,
+    #     how="left",
+    #     left_on="key",
+    #     right_on="key",
+    # )
     # c1_ost.to_parquet("c1_ost.parquet")
-    # print("запись временного файла")
-    # c1_ost.to_excel("c1_ost.xlsx", index=False)
-    # sap_ost.to_excel("sap_ost.xlsx", index=False)
 
     # перенос данных из выгружаемых запасов "ДатПервПст" в выгрузку 1с
     # print(c1_ost.dtypes)
     # c1_ost["ДатаПервПост"] = pd.to_datetime(c1_ost["ДатаПервПост"], errors="coerce")
-    # c1_ost.rename(
-    #     columns={"ПервДатПр": "ДатаПервПост", "Обозначение": "Обознач. склада"},
-    #     inplace=True,
-    # )
+    c1_ost.rename(
+        columns={
+            "Характеристика.Документ поступления.Дата": "ДатаПервПост_1c",
+            "Документ посутпления - Дата": "ДатаПервПост_1c",
+            "Обозначение": "Обознач. склада",
+            "Доступное кол-во": "Количество",
+        },
+        inplace=True,
+        errors="ignore",
+    )
+
+    c1_ost["ДатаПервПост_1c"] = pd.to_datetime(
+        c1_ost["ДатаПервПост_1c"], errors="coerce", dayfirst=True
+    )
     c1_ost["ДатаПервПост"] = pd.to_datetime(c1_ost["ДатаПервПост"], errors="coerce")
+
+    # для ускорения можно выполнить после фильтрации
+    # заполнить пустые даты из 1с, сбросить время в 0:00, в позиции без даты заливаем 2020-01-01
     mask = c1_ost["ДатаПервПост"].isna()
-    c1_ost.loc[mask, "ДатаПервПост"] = c1_ost["ДатПервПст"]
+    c1_ost.loc[mask, "ДатаПервПост"] = c1_ost["ДатаПервПост_1c"]
+    c1_ost["ДатаПервПост"] = c1_ost["ДатаПервПост"].dt.normalize()
+    mask = c1_ost["ДатаПервПост"].isna()
+    c1_ost.loc[mask, "ДатаПервПост"] = pd.to_datetime(date(2020, 1, 1))
+
+    # ==================для тестирования
+    # print("запись временного файла")
+    # c1_ost.to_excel("c1_ost.xlsx", index=False)
+    # sys.exit()
+    # ==
 
     # преобразовать типы данных
     c1_ost = make_clean(c1_ost)
@@ -284,7 +324,8 @@ def transform(
 
     # вывести результат в файл
     print("Датафрейм для записи в выходной файл:")
-    print(c1_ost.info())
+    # print(c1_ost.info())
+    c1_ost.info()
 
     # потеряшки это строки с остатком которых не нашли в sap
     # "Конечный остаток_Итого с ТЗР (без НДС)"
@@ -340,9 +381,11 @@ def load_mol_excel(
     lisc = res.columns.to_list()
 
     # print(
-    #     f"Список прочитанных колонок в файле {str(Path(filename).resolve())}: {lisc}, \nколичество колонок: {len(lisc)}"
+    #     f"--ОСВ список прочитанных колонок в файле {str(Path(filename).resolve())}: {lisc}, \nколичество колонок: {len(lisc)}"
     # )
-    print(f"Прочитанных колонок в файле {str(Path(filename).resolve())}: {len(lisc)}")
+    print(
+        f"--ОСВ прочитанных колонок в файле {str(Path(filename).resolve())}: {len(lisc)}"
+    )
     # список найденных имён колонок
     resl = []
     # дикт для переименования найденных колонок
@@ -355,7 +398,7 @@ def load_mol_excel(
             renmd[dfit] = clumns[li]
         else:
             # print(f'Ошибка. Не нашел колонку "{li}" в списке колонок: {lisc} ')
-            print(f'\nОшибка. Не нашел колонку "{li}" в списке колонок')
+            print(f'\n--ОСВ Ошибка. Не нашел колонку "{li}" в списке колонок')
             sys.exit()
 
     if only_selected:
@@ -367,7 +410,7 @@ def load_mol_excel(
     )
     if drop_un:
         pattern = r"_[A-z:\d{1,2} ]+"
-        print(rf"Очистка имени колонок по шаблону '{pattern}'")
+        print(rf"--ОСВ очистка имени колонок по шаблону '{pattern}'")
         res = res.rename(columns=lambda x: re.sub(pattern, "", x))
         # сбросить дубликаты колонок по именам, сохранив первую
         res = res.loc[:, ~res.columns.duplicated()]
@@ -390,9 +433,9 @@ def find_latest_file(directory: str, pattern: str) -> str | None:
             return None
 
         latest_file = max(files, key=lambda p: p.stat().st_mtime)
-        print(
-            f"Найден самый новый файл по шаблону '{pattern}' в каталоге '{directory}':\n{str(Path(latest_file).resolve())}"
-        )
+        # print(
+        #     f"\nНайден самый новый файл по шаблону '{pattern}' в каталоге '{directory}':\n{str(Path(latest_file).resolve())}"
+        # )
         return str(latest_file)
     except FileNotFoundError:
         print(f"Ошибка: Каталог '{directory}' не найден.")
@@ -446,7 +489,7 @@ def pdread_c1(DATA_C1: str) -> tuple[pd.DataFrame, str]:
     print("--выбираем файл с остатками ОСВ---")
     mol_file = find_latest_file(DATA_C1, "*.xlsx")
 
-    print(f"--читаем ОСВ файл:\n{mol_file}")
+    print(f"--читаем ОСВ файл: {mol_file}")
 
     if not mol_file:
         print("Не удалось найти необходимые файлы данных. Выход.")
@@ -565,9 +608,10 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
             index=False,
         )
 
-        wsl = gl_writer.book.get_worksheet_by_name(sheetname)  # type: ignore
-        wsl.set_column(3, 4, 18, gl_format1)  # type: ignore
-        wsl.autofit()  # type: ignore
+        # форматирование листов расшифровок отключено
+        # wsl = gl_writer.book.get_worksheet_by_name(sheetname)  # type: ignore
+        # wsl.set_column(3, 4, 18, gl_format1)  # type: ignore
+        # wsl.autofit()  # type: ignore
 
         table.at[row.Index, param["pivot_ind"][0]] = (
             "=HYPERLINK(\"#'"
@@ -584,11 +628,21 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
 
     # формирование шаблона вывода для колонок, установка итоговой функции суммирования
     # для колонки с ссылками отдельный формат синим и без функции итога
+
     column_settings = [
-        {"header": column, "total_function": "sum", "format": gl_format0}
+        {
+            "header": column,
+            "total_function": "sum",
+            "format": gl_format0,
+            "header_format": gl_wrap_format,
+        }
         if column
         != param.get("linkcol", "--строка которая не попадется в наименованиях--")
-        else {"header": column, "format": gl_link_format}
+        else {
+            "header": column,
+            "format": gl_link_format,
+            "header_format": gl_wrap_format,
+        }
         for column in table.columns
     ]
 
@@ -619,7 +673,12 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     )
 
     column_settings = [
-        {"header": column, "total_function": "sum", "format": gl_format0}
+        {
+            "header": column,
+            "total_function": "sum",
+            "format": gl_format0,
+            "header_format": gl_wrap_format,
+        }
         for column in itogt.columns
     ]
 
@@ -654,7 +713,12 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     cur_row += 1
 
     column_settings = [
-        {"header": column, "total_function": "sum", "format": gl_format0}
+        {
+            "header": column,
+            "total_function": "sum",
+            "format": gl_format0,
+            "header_format": gl_wrap_format,
+        }
         for column in itogt2.columns
     ]
 
@@ -694,13 +758,16 @@ def report(
     global gl_writer
 
     workbook = gl_writer.book
-    workbook.add_worksheet("Суммы")  # type: ignore
-    workbook.add_worksheet("filter")  # type: ignore
-    workbook.add_worksheet("base")  # type: ignore
+    wssumm = workbook.add_worksheet("Суммы")  # type: ignore
+    wsfilter = workbook.add_worksheet("filter")  # type: ignore
+    wsbase = workbook.add_worksheet("base")  # type: ignore
 
     # записать в excel имеющиеся колонок
-    # выключено для ускорения вывода
-    dfl.to_excel(gl_writer, sheet_name="base", index=False)
+    # выключить для ускорения вывода
+    # обычный вывод
+    # dfl.to_excel(gl_writer, sheet_name="base", index=False)
+    # оптимизированный вывод
+    save_ws(dfl, wsbase)  # type: ignore
 
     goodlist = [
         "Счет",
@@ -715,6 +782,7 @@ def report(
         "Приход_в т.ч. сумма доп. расходов",
         "Расход_Количество",
         "Расход_Сумма (без НДС)",
+        "Освоение_Сумма (без НДС)",
         "Освоение_Итого с ТЗР (без НДС)",
         "Расход_в т.ч. сумма доп. расходов",
         "Конечный остаток_Количество",
@@ -756,19 +824,21 @@ def report(
     ]
 
     # выборка складов МОЛ "Склад / Контрагент / Работник"
-    mol_1c = [
-        "МОЛ ЦАП",
-        "МОЛ ЦАП УМАИТ",
-        "Оргтехника офис",
-    ]
+    # mol_1c = [
+    #     "МОЛ ЦАП",
+    #     "МОЛ ЦАП УМАИТ",
+    #     "Оргтехника офис",
+    # ]
     # выборка по фильтрам
     dfl_s = dfl_s[
         dfl_s["Наименование подразделения"].isin(podr_sap)
-        | dfl_s["Склад / Контрагент / Работник"].isin(mol_1c)
+        # тк нужные данные внесены в наим. подр. фильтр по складу можно сбросить
+        # | dfl_s["Склад / Контрагент / Работник"].isin(mol_1c)
     ]
 
     # записать в excel выборку колонок
-    dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
+    # dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
+    save_ws(dfl_s, wsfilter)
 
     if toch and client is not None:
         intoclickhouse(
@@ -783,13 +853,9 @@ def report(
         print("Report. Запись отфильтрованной таблицы в clickhouse отключена.")
 
     # генерация и вывод сводной
-
-    # Освоение_Итого с ТЗР (без НДС)
-    # Расход_в т.ч. сумма доп. расходов
-
     param_sum = [
         "Освоение_Итого с ТЗР (без НДС)",
-        "Расход_в т.ч. сумма доп. расходов",
+        # "Расход_в т.ч. сумма доп. расходов",
         "Конечный остаток_Сумма (без НДС)",
         "Конечный остаток_Итого с ТЗР (без НДС)",
         "Начальная сумма более 3х лет (без НДС)",
@@ -819,19 +885,20 @@ def report(
     listmessage = (
         f"Остатки из файла: {files[1]}",
         f"Дата прихода и распределение центральных складов из файла: {files[0]}",
-        f"Дата прихода по складам МОЛ из файла: {files[2]}",
+        # f"Дата прихода по складам МОЛ из файла: {files[2]}",
+        "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой "
+        "2020-01-01"
+        "",
         f"Всё что пришло {date(datetime.now().year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками.",
     )
 
-    wss = gl_writer.book.get_worksheet_by_name("Суммы")  # type: ignore
-    if wss is not None:
-        wss.write_column(0, 0, listmessage)
-
+    wssumm.write_column(0, 0, listmessage)
+    # автоподбор ширины колонок
     # вывод таблиц с расшифровками
     toe(dfl_s, params)
-
-    # автоподбор ширины колонок
-    gl_writer.book.get_worksheet_by_name(params["страница"]).autofit()  # type: ignore
+    wssumm.autofit()
+    wssumm.set_column(0, 0, 14)
+    wssumm.set_column(4, 9, 24)
 
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
@@ -867,7 +934,7 @@ def start_parellel():
     # выгрузка sap
     DATA_SAP = "SAP_in"
     # данные по месяцам
-    DATA_SAP2 = "дпм"
+    # DATA_SAP2 = "дпм"
     # выгрузка 1С
     DATA_C1 = "C1_in"
 
@@ -878,13 +945,19 @@ def start_parellel():
         tasks = [
             delayed(pdread_sap)(DATA_SAP),
             delayed(pdread_c1)(DATA_C1),
-            delayed(pdread_sap)(DATA_SAP2),
+            # delayed(pdread_sap)(DATA_SAP2),
         ]
         results = Parallel(n_jobs=-1)(tasks)
         timer("Чтение завершено.", startTime)
 
         # слияние и поиск строк не найденных в 1С
-        c1_ost, lost_warn = transform(results[0][0], results[1][0], results[2][0])  # type: ignore
+        c1_ost, lost_warn = transform(results[0][0], results[1][0])  # type: ignore
+
+        # ==================для тестирования
+        # print("запись временного файла")
+        # c1_ost.to_excel("c1_ost.xlsx", index=False)
+        # sys.exit()
+        # ==
 
         # ===блок вывода промежуточных файлов для отладки
         # mol_file = results[1][1]  # type: ignore
@@ -941,7 +1014,7 @@ def start_parellel():
 
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
-    gotfiles = (results[0][1], results[1][1], results[2][1])  # type: ignore
+    gotfiles = (results[0][1], results[1][1])  # type: ignore
     report(
         c2_df, files=gotfiles, toch=True, client=gl_client, tablename="c1_ost_filter"
     )
