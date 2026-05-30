@@ -144,7 +144,7 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
 
 
 def transform(
-    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame
+    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame, sap_ost_do: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Преобразование данных для отчета
 
@@ -445,6 +445,45 @@ def find_latest_file(directory: str, pattern: str) -> str | None:
         return None
 
 
+def find_latest2_file(directory: str, pattern: str) -> list[str] | None:
+    """Находит два последних измененных файла в каталоге по заданному шаблону.
+    Первый в списке должен быть файл с суффиксом "до". Если первый заканчивается на "до", поменяет их местами.
+
+    Args:
+        directory (str): _Каталог для поиска файла_
+        pattern (str): _Шаблон для поиска файла_
+
+    Returns:
+        list[str] | None: _Найденные файлы по шаблону_
+    """
+
+    try:
+        dir_path = Path(directory)
+        files = list(dir_path.glob(pattern))
+        if not files:
+            print(
+                f"Ошибка: Не найдено файлов по шаблону '{pattern}' в каталоге '{directory}'."
+            )
+            return None
+
+        # сортируть файлы по времени изменения и взять два последних
+        latest_files = sorted(files, key=lambda p: p.stat().st_mtime)[:2]
+        # первый в списке должен быть файл с суффиксом "до". Если первый заканчивается на "до", поменять их местами.
+        if len(latest_files) == 2 and latest_files[0].stem[-3:-1] == "до":
+            latest_files[0], latest_files[1] = latest_files[1], latest_files[0]
+
+        # print(
+        #     f"\nНайдены два последних файла по шаблону '{pattern}' в каталоге '{directory}':\n{[str(Path(f).resolve()) for f in latest_files]}"
+        # )
+        return [str(f) for f in latest_files]
+    except FileNotFoundError:
+        print(f"Ошибка: Каталог '{directory}' не найден.")
+        return None
+    except Exception as e:
+        print(f"Произошла непредвиденная ошибка: {e}")
+        return None
+
+
 def loadinit() -> configparser.ConfigParser:
     config = configparser.ConfigParser()
     config_file_path = "act.ini"
@@ -452,7 +491,7 @@ def loadinit() -> configparser.ConfigParser:
     try:
         with open(config_file_path, "r") as f:
             config.read_file(f)
-    except (FileNotFoundError, configparser.MissingSectionHeaderError):
+    except FileNotFoundError, configparser.MissingSectionHeaderError:
         config["DEFAULT"] = {
             "file1": r"R:\source\python\Python-xls\data\склады\2026-02-28\все мтр на_27.02.2026.xlsx",
             "file2": r"R:\source\python\Python-xls\data\склады\2026-02-28\Лист в ALVXXL01 (1).xlsx",
@@ -468,18 +507,13 @@ def loadinit() -> configparser.ConfigParser:
     return config
 
 
-def pdread_sap(DATA_SAP: str) -> tuple[pd.DataFrame, str]:
+def pdread_sap(filesap: str) -> tuple[pd.DataFrame, str]:
     """Для использования с joblib. Загрузка файла SAP"""
     print("--выбираем файл с остатками SAP---")
-    filesap = find_latest_file(DATA_SAP, "*.xlsx")
 
-    if filesap is None:
-        print("Не удалось найти необходимые файлы данных. Выход")
-        sys.exit(0)
-    else:
-        print(f"--читаем SAP файл: {filesap}")
-        res = pd.read_excel(filesap, engine="calamine")
-        print(f"--SAP файл прочитан: {filesap}")
+    print(f"--читаем SAP файл: {filesap}")
+    res = pd.read_excel(filesap, engine="calamine")
+    print(f"--SAP файл прочитан: {filesap}")
 
     return res, filesap
 
@@ -941,17 +975,24 @@ def start_parellel():
     if load:
         startTime = timer(name="Начало чтения входных файлов")
 
+        if (latest_sap_file := find_latest2_file("SAP_in", "*.xlsx")) is None or len(
+            latest_sap_file
+        ) != 2:
+            print("Не удалось найти необходимые файлы данных. Выход.")
+            sys.exit(0)
+        print(f"Найденные файлы в папке {DATA_SAP}: {latest_sap_file}")
+
         # запуск параллельного считывания файлов excel
         tasks = [
-            delayed(pdread_sap)(DATA_SAP),
+            delayed(pdread_sap)(latest_sap_file[0]),
             delayed(pdread_c1)(DATA_C1),
-            # delayed(pdread_sap)(DATA_SAP2),
+            delayed(pdread_sap)(latest_sap_file[1]),
         ]
         results = Parallel(n_jobs=-1)(tasks)
         timer("Чтение завершено.", startTime)
 
         # слияние и поиск строк не найденных в 1С
-        c1_ost, lost_warn = transform(results[0][0], results[1][0])  # type: ignore
+        c1_ost, lost_warn = transform(results[0][0], results[1][0], results[2][0])  # type: ignore
 
         # ==================для тестирования
         # print("запись временного файла")
