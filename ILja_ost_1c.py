@@ -144,14 +144,14 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
 
 
 def transform(
-    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame, sap_ost_do: pd.DataFrame
+    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame, sap_ost_ot: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Преобразование данных для отчета
 
     Args:
-        sap_ost (pd.DataFrame): Фрейм с остатками SAP
+        sap_ost (pd.DataFrame): Фрейм с остатками SAP на дату "до"
         c1_ost (pd.DataFrame): Фрейм с остатками 1с
-        # sap_ost2 (pd.DataFrame): Фрейм с остатками SAP выгружаемые запасы
+        sap_ost_ot (pd.DataFrame): Фрейм с остатками SAP на дату "от"
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: Возвращает 2 фрейма. соединенные остатки и потерянные строки
@@ -162,9 +162,17 @@ def transform(
     # обрезать нули слева
     c1_ost["КСМ"] = c1_ost["КСМ"].str.lstrip("0")
 
-    # добавление кода склада в выгрузку остатков 1с
-    c1_ost.loc[c1_ost["Склад / Контрагент / Работник"].isna(), "Код склада SAP"] = (
-        "####"
+    # обработка пустых кодов склада в 1с
+    mask = (c1_ost["Склад / Контрагент / Работник"].isna()) | (
+        c1_ost["Склад / Контрагент / Работник"] == "Материалы в пути"
+    )
+    c1_ost.loc[mask, "Код склада SAP"] = "####"
+
+    print(
+        "count=",
+        c1_ost[c1_ost["Склад / Контрагент / Работник"] == "Материалы в пути"][
+            "Склад / Контрагент / Работник"
+        ].count(),
     )
 
     # сформировать ключ для слияния
@@ -174,15 +182,32 @@ def transform(
     sap_ost["key"] = (
         sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
     )
+    sap_ost_ot["key"] = (
+        sap_ost_ot["Склад"]
+        + sap_ost_ot["Материал"].astype("string")
+        + sap_ost_ot["Партия"]
+    )
     # сортировка и сброс дубликатов по партиям
     # sap_ost = sap_ost.sort_values(by="ДатаПервПост", ascending=False).drop_duplicates(
     sap_ost = sap_ost.sort_values(by="ПервДатПр", ascending=False).drop_duplicates(
         subset="key", keep="first"
     )
+    sap_ost_ot = sap_ost_ot.sort_values(
+        by="ПервДатПр", ascending=False
+    ).drop_duplicates(subset="key", keep="first")
+
+    # из начальных sap остатков удаляем строки которые есть в конечных остатках.
+    # останутся строки которые были израсходованы полностью
+    # сливаем в один фрейм
+    sap_ost_ot = sap_ost_ot[~sap_ost_ot["key"].isin(sap_ost["key"])]
+
+    # sap_ost.to_excel("sap_ost.xlsx", engine="xlsxwriter")
+
+    sap_ost = pd.concat([sap_ost, sap_ost_ot], ignore_index=True)
 
     # print("запись временного файла sap_ost")
     # # c1_ost.to_excel("c1_ost.xlsx", index=False)
-    # sap_ost.to_excel("sap_ost.xlsx", index=False)
+    # sap_ost.to_excel("sap_ost2.xlsx", engine="xlsxwriter")
 
     # подготовка таблицы с выгружаемыми запасами к слиянию
     # сортировать по дате и оставлять только первую строку для каждого ключа
@@ -248,8 +273,8 @@ def transform(
     c1_ost.loc[mask, "ДатаПервПост"] = pd.to_datetime(date(2020, 1, 1))
 
     # ==================для тестирования
-    # print("запись временного файла")
-    # c1_ost.to_excel("c1_ost.xlsx", index=False)
+    print("запись временного файла 268")
+    c1_ost.to_excel("c1_ost.xlsx", engine="xlsxwriter")
     # sys.exit()
     # ==
 
@@ -965,10 +990,8 @@ def start_parellel():
     db_name = "db_pandas"
     gl_client = contc(db_name, hostip=serverip, port=int(serverport))
 
-    # выгрузка sap
+    # выгрузка sap. 2 последних файла с суффиксами {от} и {до}
     DATA_SAP = "SAP_in"
-    # данные по месяцам
-    # DATA_SAP2 = "дпм"
     # выгрузка 1С
     DATA_C1 = "C1_in"
 
@@ -984,9 +1007,9 @@ def start_parellel():
 
         # запуск параллельного считывания файлов excel
         tasks = [
-            delayed(pdread_sap)(latest_sap_file[0]),
-            delayed(pdread_c1)(DATA_C1),
             delayed(pdread_sap)(latest_sap_file[1]),
+            delayed(pdread_c1)(DATA_C1),
+            delayed(pdread_sap)(latest_sap_file[0]),
         ]
         results = Parallel(n_jobs=-1)(tasks)
         timer("Чтение завершено.", startTime)

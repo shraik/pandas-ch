@@ -239,7 +239,12 @@ def intoclickhouse(
                 break
 
         if backend_np:
+            tostr = df.select_dtypes(include=["object"]).columns
+            df[tostr] = df[tostr].astype("string")
             df2 = df.convert_dtypes(dtype_backend="pyarrow")
+            # pd.set_option("display.max_rows", None)
+            # pd.set_option("display.max_columns", None)
+            # print(df2.dtypes)
             # cols_str = df.select_dtypes(include=["category"]).columns
             # df2[cols_str] = df2[cols_str].astype(pd.ArrowDtype(pa.string()))
             client.insert_df_arrow(table_name, df2)
