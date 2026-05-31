@@ -168,13 +168,6 @@ def transform(
     )
     c1_ost.loc[mask, "Код склада SAP"] = "####"
 
-    print(
-        "count=",
-        c1_ost[c1_ost["Склад / Контрагент / Работник"] == "Материалы в пути"][
-            "Склад / Контрагент / Работник"
-        ].count(),
-    )
-
     # сформировать ключ для слияния
     c1_ost["key"] = (
         c1_ost["Код склада SAP"] + c1_ost["КСМ"].astype("string") + c1_ost["Партия SAP"]
@@ -273,8 +266,8 @@ def transform(
     c1_ost.loc[mask, "ДатаПервПост"] = pd.to_datetime(date(2020, 1, 1))
 
     # ==================для тестирования
-    print("запись временного файла 268")
-    c1_ost.to_excel("c1_ost.xlsx", engine="xlsxwriter")
+    # print("запись временного файла 268")
+    # c1_ost.to_excel("c1_ost.xlsx", engine="xlsxwriter")
     # sys.exit()
     # ==
 
@@ -348,9 +341,9 @@ def transform(
     )
 
     # вывести результат в файл
-    print("Датафрейм для записи в выходной файл:")
-    # print(c1_ost.info())
-    c1_ost.info()
+    if __debug__:
+        print("Датафрейм для записи в выходной файл:")
+        c1_ost.info()
 
     # потеряшки это строки с остатком которых не нашли в sap
     # "Конечный остаток_Итого с ТЗР (без НДС)"
@@ -435,7 +428,7 @@ def load_mol_excel(
     )
     if drop_un:
         pattern = r"_[A-z:\d{1,2} ]+"
-        print(rf"--ОСВ очистка имени колонок по шаблону '{pattern}'")
+        print(rf"--ОСВ удаление из имени колонок по шаблону '{pattern}'")
         res = res.rename(columns=lambda x: re.sub(pattern, "", x))
         # сбросить дубликаты колонок по именам, сохранив первую
         res = res.loc[:, ~res.columns.duplicated()]
@@ -534,11 +527,18 @@ def loadinit() -> configparser.ConfigParser:
 
 def pdread_sap(filesap: str) -> tuple[pd.DataFrame, str]:
     """Для использования с joblib. Загрузка файла SAP"""
-    print("--выбираем файл с остатками SAP---")
 
-    print(f"--читаем SAP файл: {filesap}")
+    # if filesap[-3:-1] == "до":
+    if filesap.find("{от}") > -1:
+        ftype = "начальный"
+    elif filesap.find("{до}") > -1:
+        ftype = "конечный"
+    else:
+        ftype = "неизвестный"
+
+    print(f"--читаем {ftype} SAP файл: {filesap}")
     res = pd.read_excel(filesap, engine="calamine")
-    print(f"--SAP файл прочитан: {filesap}")
+    print(f"--{ftype} SAP файл прочитан: {filesap}")
 
     return res, filesap
 
@@ -1067,18 +1067,24 @@ def start_parellel():
     c2_df = load_ch(gl_client, "c1_sap_ost_flat")
     timer("Читаем из clickhouse, таблицу c1_sap_ost_flat", startTime)
 
-    print("====считанная таблица====")
-    c2_df.info()
+    if __debug__:
+        print("__debug__:", __debug__)
+        print("====считанная таблица====")
+        c2_df.info()
 
     repfile = "out/report.xlsx"
     gl_writer = initexcel(repfile)
-    lost_warn.to_excel(
-        gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
-    )
+    if load:
+        lost_warn.to_excel(
+            gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
+        )
 
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
-    gotfiles = (results[0][1], results[1][1])  # type: ignore
+    if load:
+        gotfiles = (results[0][1], results[1][1])  # type: ignore
+    else:
+        gotfiles = ("Clickhouse_mode1", "Clickhouse_mode2")
     report(
         c2_df, files=gotfiles, toch=True, client=gl_client, tablename="c1_ost_filter"
     )

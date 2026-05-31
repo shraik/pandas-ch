@@ -253,9 +253,7 @@ def intoclickhouse(
     else:
         client.insert_df(table_name, df)
 
-    print(
-        f"intoclickhouse. Data from dataframe inserted into clickhouse table '{table_name}'."
-    )
+    print(f"intoclickhouse. Датафрейм записан в таблицу ClickHouse '{table_name}'.")
 
 
 def create_table_schema(client, df, table_name):
