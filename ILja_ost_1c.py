@@ -30,12 +30,13 @@ gl_wrap_format = None
 gl_back_addr = {}
 
 
-def save_ws(ldf: pd.DataFrame, ws: Worksheet):
+def save_ws(ldf: pd.DataFrame, ws: Worksheet, add_filter=False):
     """Построчный вывод датафрейма в эксель лист. Работает более быстро для больших фреймов (более ~300 строк).
 
     Args:
         ldf (pd.DataFrame): Фрейм для вывода
         ws (Worksheet): Страница для вывода. Страница должна быть создана заранее.
+        add_filter (boolean, optional): Добавить фильтр
     """
     # ldf = ldf.fillna(np.nan).replace({np.nan: None})
     ldf = ldf.fillna(NP_NAN).replace({NP_NAN: None})
@@ -45,6 +46,10 @@ def save_ws(ldf: pd.DataFrame, ws: Worksheet):
     for row in ldf.itertuples(name=None):
         ws.write_row(index, 0, list(row)[1:])
         index += 1
+
+    if add_filter:
+        rows, cols = ldf.shape
+        ws.autofilter(0, 0, rows, cols - 1)
 
 
 def initexcel(pathtofile: str):
@@ -826,7 +831,7 @@ def report(
     # обычный вывод
     # dfl.to_excel(gl_writer, sheet_name="base", index=False)
     # оптимизированный вывод
-    save_ws(dfl, wsbase)  # type: ignore
+    # save_ws(dfl, wsbase)  # type: ignore
 
     goodlist = [
         "Счет",
@@ -897,7 +902,7 @@ def report(
 
     # записать в excel выборку колонок
     # dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
-    save_ws(dfl_s, wsfilter)
+    save_ws(dfl_s, wsfilter, add_filter=True)
 
     if toch and client is not None:
         intoclickhouse(
