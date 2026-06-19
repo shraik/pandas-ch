@@ -1,7 +1,7 @@
 import configparser
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from numpy import nan as NP_NAN
@@ -22,7 +22,7 @@ from shared_chouse import (
     timer,
 )
 
-gl_writer: pd.ExcelWriter
+# gl_writer: pd.ExcelWriter
 gl_link_format = None
 gl_format1 = None
 gl_format0 = None
@@ -38,14 +38,12 @@ def save_ws(ldf: pd.DataFrame, ws: Worksheet, add_filter=False):
         ws (Worksheet): Страница для вывода. Страница должна быть создана заранее.
         add_filter (boolean, optional): Добавить фильтр
     """
-    # ldf = ldf.fillna(np.nan).replace({np.nan: None})
+
     ldf = ldf.fillna(NP_NAN).replace({NP_NAN: None})
 
-    index = 1
-    ws.write_row(0, 0, ldf.columns.to_list())
-    for row in ldf.itertuples(name=None):
-        ws.write_row(index, 0, list(row)[1:])
-        index += 1
+    ws.write_row(0, 0, [col for col in ldf.columns])
+    for i in range(len(ldf.columns)):
+        ws.write_column(1, i, ldf.iloc[:, i])
 
     if add_filter:
         rows, cols = ldf.shape
@@ -322,7 +320,7 @@ def transform(
         "Наименование категории запаса"
     ].fillna("Запасы под потребность текущего периода")
 
-    # добавление
+    # добавление 3х леток на конец года
     date3y = pd.to_datetime(date(datetime.now().year - 3, 12, 31))
     c1_ost.loc[
         c1_ost["ДатаПервПост"] <= date3y, "Конечная сумма более 3х лет (без НДС)"
@@ -331,11 +329,26 @@ def transform(
         c1_ost["ДатаПервПост"] <= date3y, "Начальная сумма более 3х лет (без НДС)"
     ] = c1_ost["Начальный остаток_Сумма (без НДС)"]
 
+    # добавление точных 3х леток
+
+    # вычисляем конец прошлого месяца -3 года
+    date3y = pd.to_datetime(
+        date(datetime.now().year - 3, date.today().month, 1) - timedelta(days=1)
+    )
+    c1_ost.loc[
+        c1_ost["ДатаПервПост"] <= date3y, "ТТ Конечная сумма более 3х лет (без НДС)"
+    ] = c1_ost["Конечный остаток_Сумма (без НДС)"]
+    c1_ost.loc[
+        c1_ost["ДатаПервПост"] <= date3y, "ТТ Начальная сумма более 3х лет (без НДС)"
+    ] = c1_ost["Начальный остаток_Сумма (без НДС)"]
+
     param_sum = [
         "Конечный остаток_Сумма (без НДС)",
         "Конечный остаток_Итого с ТЗР (без НДС)",
         "Начальная сумма более 3х лет (без НДС)",
         "Конечная сумма более 3х лет (без НДС)",
+        "ТТ Начальная сумма более 3х лет (без НДС)",
+        "ТТ Конечная сумма более 3х лет (без НДС)",
     ]
     # в колонках суммирования заменить na на нули
     c1_ost[param_sum] = c1_ost[param_sum].fillna(0.0)
@@ -343,6 +356,10 @@ def transform(
     c1_ost["Изм 3х леток"] = (
         c1_ost["Конечная сумма более 3х лет (без НДС)"]
         - c1_ost["Начальная сумма более 3х лет (без НДС)"]
+    )
+    c1_ost["ТТ Изм 3х леток"] = (
+        c1_ost["ТТ Конечная сумма более 3х лет (без НДС)"]
+        - c1_ost["ТТ Начальная сумма более 3х лет (без НДС)"]
     )
 
     # вывести результат в файл
@@ -490,7 +507,7 @@ def find_latest2_file(directory: str, pattern: str) -> list[str] | None:
             return None
 
         # сортируть файлы по времени изменения и взять два последних
-        latest_files = sorted(files, key=lambda p: p.stat().st_mtime)[:2]
+        latest_files = sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)[:2]
         # первый в списке должен быть файл с суффиксом "до". Если первый заканчивается на "до", поменять их местами.
         if len(latest_files) == 2 and latest_files[0].stem[-3:-1] == "до":
             latest_files[0], latest_files[1] = latest_files[1], latest_files[0]
@@ -831,7 +848,10 @@ def report(
     # обычный вывод
     # dfl.to_excel(gl_writer, sheet_name="base", index=False)
     # оптимизированный вывод
-    # save_ws(dfl, wsbase)  # type: ignore
+
+    startTime = timer("==Запись 'base' начата")
+    save_ws(dfl, wsbase, add_filter=True)  # type: ignore
+    timer("==Запись завершена", startTime)
 
     goodlist = [
         "Счет",
@@ -873,6 +893,9 @@ def report(
         "Начальная сумма более 3х лет (без НДС)",
         "Конечная сумма более 3х лет (без НДС)",
         "Изм 3х леток",
+        "ТТ Начальная сумма более 3х лет (без НДС)",
+        "ТТ Конечная сумма более 3х лет (без НДС)",
+        "ТТ Изм 3х леток",
     ]
     dfl_s = dfl[goodlist]
 
@@ -925,6 +948,9 @@ def report(
         "Начальная сумма более 3х лет (без НДС)",
         "Конечная сумма более 3х лет (без НДС)",
         "Изм 3х леток",
+        "ТТ Начальная сумма более 3х лет (без НДС)",
+        "ТТ Конечная сумма более 3х лет (без НДС)",
+        "ТТ Изм 3х леток",
     ]
 
     param_ind = [
@@ -938,7 +964,7 @@ def report(
     params = {
         "writer": gl_writer,
         "страница": "Суммы",
-        "начстрока": 5,
+        "начстрока": 6,
         "начколонка": 0,
         "pivot_ind": param_ind,
         "pivot_sum": param_sum,
@@ -948,12 +974,12 @@ def report(
 
     listmessage = (
         f"Остатки из файла: {files[1]}",
-        f"Дата прихода и распределение центральных складов из файла: {files[0]}",
-        # f"Дата прихода по складам МОЛ из файла: {files[2]}",
+        f"Дата прихода и конечный остаток центральных складов из файла: {files[0]}",
+        f"Начальный остаток центральных складов из файла: {files[2]}",
         "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой "
         "2020-01-01"
         "",
-        f"Всё что пришло {date(datetime.now().year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками.",
+        f"Всё что пришло {date(datetime.now().year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date(datetime.now().year - 3, date.today().month, 1) - timedelta(days=1)}",
     )
 
     wssumm.write_column(0, 0, listmessage)
@@ -962,7 +988,8 @@ def report(
     toe(dfl_s, params)
     wssumm.autofit()
     wssumm.set_column(0, 0, 14)
-    wssumm.set_column(4, 9, 24)
+    # wssumm.set_column(4, 9, 24)
+    wssumm.set_column(4, 12, 24)
 
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
@@ -1087,9 +1114,12 @@ def start_parellel():
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
     if load:
-        gotfiles = (results[0][1], results[1][1])  # type: ignore
+        gotfiles = (results[0][1], results[1][1], results[2][1])  # type: ignore
     else:
-        gotfiles = ("Clickhouse_mode1", "Clickhouse_mode2")
+        gotfiles = ("Clickhouse_mode1", "Clickhouse_mode2", "Clickhouse_mode3")
+    # print(c2_df.dtypes)
+    # sys.exit()
+
     report(
         c2_df, files=gotfiles, toch=True, client=gl_client, tablename="c1_ost_filter"
     )
