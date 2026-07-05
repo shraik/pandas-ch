@@ -872,9 +872,9 @@ def report(
     global gl_writer
 
     workbook = gl_writer.book
-    wssumm = workbook.add_worksheet("Суммы")  # type: ignore
-    wsfilter = workbook.add_worksheet("filter")  # type: ignore
-    wsbase = workbook.add_worksheet("base")  # type: ignore
+    wssumm = workbook.add_worksheet("Суммы")
+    wsfilter = workbook.add_worksheet("filter")
+    wsbase = workbook.add_worksheet("base")
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
@@ -885,6 +885,12 @@ def report(
     # startTime = timer("==Запись 'base' начата")
     # save_ws(dfl, wsbase, add_filter=True)  # type: ignore
     # timer("==Запись завершена", startTime)
+
+    # записать возвратный план
+    ws_vp = workbook.add_worksheet("ВП")
+    save_ws(gl_dfb, ws_vp, add_filter=True)
+
+    gl_filtersdf.to_excel(gl_writer, sheet_name="filters", index=False)
 
     goodlist = [
         "Счет",
@@ -1095,8 +1101,67 @@ def monkey_path2():
         print("Ошибка применения Monkey path gl_settings_mp не найден")
 
 
+def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
+
+    # добавить склад для позиций в закупке
+    df_in["Склад / Контрагент / Работник"] = "В закупке"
+
+    # выкинуть строки ВП которые уже не ждём
+    badlist = [
+        "0. Преобразовано",
+        "Ожидается снятие",
+        "0. Снято",
+        "13. Поставлено",
+    ]
+    df_in = df_in[~df_in["Статус"].isin(badlist)]
+
+    # привести к формату
+    df_in["Вид деятельности"] = df_in["Вид деятельности"].map(
+        {
+            "Основная деятельность": "МТР",
+            "Оборудование не входящее в смету строек": "ОНСС",
+        }
+    )
+
+    # заполнение наименования для неразыгранных позиций
+    df_in.loc[df_in["Наименование факт"].isna(), "Наименование факт"] = df_in[
+        "Полное имя материала"
+    ]
+
+    # добавление в ВП наменование отдела который её заказал
+    filter = gl_filtersdf[
+        (gl_filtersdf["otdel"] == "ИТ") & (gl_filtersdf["item"] != "бюджетс")
+    ]["sap"]
+    df_in.loc[df_in["/ САП"].isin(filter), "Наименование подразделения"] = "ОИТ"
+
+    filter = gl_filtersdf[
+        (gl_filtersdf["otdel"] == "ОТ") & (gl_filtersdf["item"] != "бюджетс")
+    ]["sap"]
+    df_in.loc[df_in["/ САП"].isin(filter), "Наименование подразделения"] = "ОТ"
+
+    filter = gl_filtersdf[
+        (gl_filtersdf["otdel"] == "АСУТП") & (gl_filtersdf["item"] != "бюджетс")
+    ]["sap"]
+    df_in.loc[df_in["/ САП"].isin(filter), "Наименование подразделения"] = "ОАСУТП"
+
+    # переименование к шаблону 1с
+    df_in.rename(
+        columns={
+            "/ САП": "НомЗаяв",
+            "Вид деятельности": "Вид деят 1с",
+            "Материал": "КСМ",
+            "ЕИ ввода": "Единица измерения",
+            "Наименование факт": "Номенклатура / ОС",
+        },
+        inplace=True,
+        errors="ignore",
+    )
+
+    return df_in
+
+
 def start_parellel(date3y_in=None, date3y_in_tt=None):
-    global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf
+    global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb
 
     # load = False
     load = True
@@ -1146,8 +1211,8 @@ def start_parellel(date3y_in=None, date3y_in_tt=None):
             print(f"Нет базы данных {patho}, необходимо запустить 'refresh'")
             sys.exit(0)
         print(f"Загрузка кэша возвратного плана из {str(patho.resolve())}")
-        dfb = pd.read_parquet(patho)
-        print(dfb.info())
+        gl_dfb = pd.read_parquet(patho)
+        print(gl_dfb.info())
 
         # слияние и поиск строк не найденных в 1С
         c1_ost, lost_warn = transform(
@@ -1157,6 +1222,8 @@ def start_parellel(date3y_in=None, date3y_in_tt=None):
             date3y_in=date3y_in,
             date3y_in_tt=date3y_in_tt,
         )
+
+        gl_dfb = transform_vp(gl_dfb)
 
         """
         # ==================для тестирования
