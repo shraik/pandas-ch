@@ -1,5 +1,7 @@
-# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c.py
+# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp.py
+# Вариант с использованием библиотеки "multiprocessing" для совместимости с pyinstaller
 
+import multiprocessing as MP
 import configparser
 import re
 import sys
@@ -10,7 +12,7 @@ from numpy import nan as NP_NAN
 
 import pandas as pd
 from clickhouse_connect import driver as ch_driver
-from joblib import Parallel, delayed
+# from joblib import Parallel, delayed
 
 from xlsxwriter.worksheet import Worksheet
 
@@ -1003,6 +1005,47 @@ def report(
     hyperlink(params)
 
 
+def readparallel() -> list:
+    """Параллельная загрузка входных файлов.
+    возвращает список считанных датафреймов"""
+
+    # выгрузка sap. 2 последних файла с суффиксами {от} и {до}
+    DATA_SAP = "SAP_in"
+    # выгрузка 1С
+    DATA_C1 = "C1_in"
+
+    if (latest_sap_file := find_latest2_file("SAP_in", "*.xlsx")) is None or len(
+        latest_sap_file
+    ) != 2:
+        print("Не удалось найти необходимые файлы данных. Выход.")
+        sys.exit(0)
+    print(f"Найденные файлы в папке {DATA_SAP}: {latest_sap_file}")
+
+    # 2. Очередь для асинхронных результатов
+    async_results = []
+
+    # 3. Отправляем задачи в пул по одной вручную
+
+    # альтернативный вариант получения кол-ва ядер
+    # num_workers = os.cpu_count()
+    with MP.Pool(MP.cpu_count()) as pool:
+        task = pool.apply_async(pdread_sap, args=(latest_sap_file[1],))
+        async_results.append(task)
+        task = pool.apply_async(pdread_c1, args=(DATA_C1,))
+        async_results.append(task)
+        task = pool.apply_async(pdread_sap, args=(latest_sap_file[0],))
+        async_results.append(task)
+
+        # Закрываем пул для новых задач и ждем выполнения запущенных
+        pool.close()
+
+        # Ожидаем завершения и собираем результаты
+        # print("Ожидание завершения процессов...")
+        results = [task.get() for task in async_results]
+
+    return results
+
+
 def start_parellel():
     global gl_writer
     global gl_client
@@ -1029,33 +1072,16 @@ def start_parellel():
     db_name = "db_pandas"
     gl_client = contc(db_name, hostip=serverip, port=int(serverport))
 
-    # выгрузка sap. 2 последних файла с суффиксами {от} и {до}
-    DATA_SAP = "SAP_in"
-    # выгрузка 1С
-    DATA_C1 = "C1_in"
-
     if load:
         startTime = timer(name="Начало чтения входных файлов")
 
-        if (latest_sap_file := find_latest2_file("SAP_in", "*.xlsx")) is None or len(
-            latest_sap_file
-        ) != 2:
-            print("Не удалось найти необходимые файлы данных. Выход.")
-            sys.exit(0)
-        print(f"Найденные файлы в папке {DATA_SAP}: {latest_sap_file}")
-
-        # запуск параллельного считывания файлов excel
-        tasks = [
-            delayed(pdread_sap)(latest_sap_file[1]),
-            delayed(pdread_c1)(DATA_C1),
-            delayed(pdread_sap)(latest_sap_file[0]),
-        ]
-        results = Parallel(n_jobs=-1)(tasks)
+        results = readparallel()
         timer("Чтение завершено.", startTime)
 
         # слияние и поиск строк не найденных в 1С
-        c1_ost, lost_warn = transform(results[0][0], results[1][0], results[2][0])  # type: ignore
+        c1_ost, lost_warn = transform(results[0][0], results[1][0], results[2][0])
 
+        """
         # ==================для тестирования
         # print("запись временного файла")
         # c1_ost.to_excel("c1_ost.xlsx", index=False)
@@ -1086,8 +1112,8 @@ def start_parellel():
         # tmp_writer.close()
         # timer("Завершена запись в промежуточный файл", startTime)
         # print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
-        # ===\блок вывода промежуточных файлов для отладки
-
+        # ===\\ блок вывода промежуточных файлов для отладки
+        """
         startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
         intoclickhouse(
             gl_client,
@@ -1159,6 +1185,10 @@ def interface():
 
         root.update()
 
+        # task_thread = threading.Thread(target=start_parellel, args=(status_label,))
+        # task_thread = threading.Thread(target=start_parellel)
+        # task_thread.start()
+
         start_parellel()
 
     # Create Object
@@ -1214,6 +1244,7 @@ def interface():
 
 
 if __name__ == "__main__":
+    MP.freeze_support()
     print(
         "================================================================Запуск скрипта===="
     )

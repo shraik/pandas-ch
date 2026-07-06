@@ -1,19 +1,24 @@
-# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c.py
+# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp.py
+# Вариант с использованием библиотеки "multiprocessing" для совместимости с pyinstaller
 
+import multiprocessing as MP
 import configparser
 import re
 import sys
 from datetime import date, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 from numpy import nan as NP_NAN
 
 import pandas as pd
 from clickhouse_connect import driver as ch_driver
-from joblib import Parallel, delayed
+
+# from joblib import Parallel, delayed
+import os
 
 from xlsxwriter.worksheet import Worksheet
 
+from shared_module import loadsettings3
 from shared_chouse import (
     contc,
     # save_file_data_ch,
@@ -24,10 +29,16 @@ from shared_chouse import (
     timer,
 )
 
-import tkinter as TK
-from tkcalendar import Calendar
+import tkinter as tk
+from tkinter import filedialog as fd
+
+# from tkcalendar import Calendar, DateEntry
+from tkcalendar import DateEntry
+
 from babel import Locale
 
+
+gl_config = configparser.ConfigParser()
 
 # gl_writer: pd.ExcelWriter
 gl_link_format = None
@@ -154,7 +165,11 @@ def make_clean(ldf: pd.DataFrame) -> pd.DataFrame:
 
 
 def transform(
-    sap_ost: pd.DataFrame, c1_ost: pd.DataFrame, sap_ost_ot: pd.DataFrame
+    sap_ost: pd.DataFrame,
+    c1_ost: pd.DataFrame,
+    sap_ost_ot: pd.DataFrame,
+    date3y_in=None,
+    date3y_in_tt=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Преобразование данных для отчета
 
@@ -162,6 +177,7 @@ def transform(
         sap_ost (pd.DataFrame): Фрейм с остатками SAP на дату "до"
         c1_ost (pd.DataFrame): Фрейм с остатками 1с
         sap_ost_ot (pd.DataFrame): Фрейм с остатками SAP на дату "от"
+        date3y (datetime, optional): дата точного среза для вычисления 3х леток
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: Возвращает 2 фрейма. соединенные остатки и потерянные строки
@@ -327,26 +343,36 @@ def transform(
         "Наименование категории запаса"
     ].fillna("Запасы под потребность текущего периода")
 
-    # добавление 3х леток на конец года
-    date3y = pd.to_datetime(date(datetime.now().year - 3, 12, 31))
-    c1_ost.loc[
-        c1_ost["ДатаПервПост"] <= date3y, "Конечная сумма более 3х лет (без НДС)"
-    ] = c1_ost["Конечный остаток_Сумма (без НДС)"]
-    c1_ost.loc[
-        c1_ost["ДатаПервПост"] <= date3y, "Начальная сумма более 3х лет (без НДС)"
-    ] = c1_ost["Начальный остаток_Сумма (без НДС)"]
-
     # добавление точных 3х леток
+    if date3y_in_tt is None:
+        # вычисляем конец прошлого месяца -3 года
+        date3y = pd.to_datetime(
+            date(datetime.now().year - 3, date.today().month, 1) - timedelta(days=1)
+        )
+    else:
+        date3y = pd.to_datetime(date3y_in_tt)
 
-    # вычисляем конец прошлого месяца -3 года
-    date3y = pd.to_datetime(
-        date(datetime.now().year - 3, date.today().month, 1) - timedelta(days=1)
-    )
+    c1_ost["Дата_3года_точная"] = date3y
     c1_ost.loc[
         c1_ost["ДатаПервПост"] <= date3y, "ТТ Конечная сумма более 3х лет (без НДС)"
     ] = c1_ost["Конечный остаток_Сумма (без НДС)"]
     c1_ost.loc[
         c1_ost["ДатаПервПост"] <= date3y, "ТТ Начальная сумма более 3х лет (без НДС)"
+    ] = c1_ost["Начальный остаток_Сумма (без НДС)"]
+
+    # добавление 3х леток на конец года
+    if date3y_in is None:
+        # вычисляем конец прошлого месяца -3 года
+        date3y = pd.to_datetime(date(datetime.now().year - 3, 12, 31))
+    else:
+        date3y = pd.to_datetime(date3y_in)
+
+    c1_ost["Дата_3года_полная"] = date3y
+    c1_ost.loc[
+        c1_ost["ДатаПервПост"] <= date3y, "Конечная сумма более 3х лет (без НДС)"
+    ] = c1_ost["Конечный остаток_Сумма (без НДС)"]
+    c1_ost.loc[
+        c1_ost["ДатаПервПост"] <= date3y, "Начальная сумма более 3х лет (без НДС)"
     ] = c1_ost["Начальный остаток_Сумма (без НДС)"]
 
     param_sum = [
@@ -846,9 +872,9 @@ def report(
     global gl_writer
 
     workbook = gl_writer.book
-    wssumm = workbook.add_worksheet("Суммы")  # type: ignore
-    wsfilter = workbook.add_worksheet("filter")  # type: ignore
-    wsbase = workbook.add_worksheet("base")  # type: ignore
+    wssumm = workbook.add_worksheet("Суммы")
+    wsfilter = workbook.add_worksheet("filter")
+    wsbase = workbook.add_worksheet("base")
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
@@ -856,9 +882,15 @@ def report(
     # dfl.to_excel(gl_writer, sheet_name="base", index=False)
     # оптимизированный вывод
 
-    startTime = timer("==Запись 'base' начата")
-    save_ws(dfl, wsbase, add_filter=True)  # type: ignore
-    timer("==Запись завершена", startTime)
+    # startTime = timer("==Запись 'base' начата")
+    # save_ws(dfl, wsbase, add_filter=True)  # type: ignore
+    # timer("==Запись завершена", startTime)
+
+    # записать возвратный план
+    ws_vp = workbook.add_worksheet("ВП")
+    save_ws(gl_dfb, ws_vp, add_filter=True)
+
+    gl_filtersdf.to_excel(gl_writer, sheet_name="filters", index=False)
 
     goodlist = [
         "Счет",
@@ -903,6 +935,8 @@ def report(
         "ТТ Начальная сумма более 3х лет (без НДС)",
         "ТТ Конечная сумма более 3х лет (без НДС)",
         "ТТ Изм 3х леток",
+        "Дата_3года_точная",
+        "Дата_3года_полная",
     ]
     dfl_s = dfl[goodlist]
 
@@ -1003,9 +1037,131 @@ def report(
     hyperlink(params)
 
 
-def start_parellel():
-    global gl_writer
-    global gl_client
+def readparallel() -> list:
+    """Параллельная загрузка входных файлов.
+    возвращает список считанных датафреймов"""
+
+    # выгрузка sap. 2 последних файла с суффиксами {от} и {до}
+    DATA_SAP = "SAP_in"
+    # выгрузка 1С
+    DATA_C1 = "C1_in"
+
+    if (latest_sap_file := find_latest2_file("SAP_in", "*.xlsx")) is None or len(
+        latest_sap_file
+    ) != 2:
+        print("Не удалось найти необходимые файлы данных. Выход.")
+        sys.exit(0)
+    print(f"Найденные файлы в папке {DATA_SAP}: {latest_sap_file}")
+
+    # 2. Очередь для асинхронных результатов
+    async_results = []
+
+    # 3. Отправляем задачи в пул по одной вручную
+
+    # альтернативный вариант получения кол-ва ядер
+    # num_workers = os.cpu_count()
+    with MP.Pool(MP.cpu_count()) as pool:
+        task = pool.apply_async(pdread_sap, args=(latest_sap_file[1],))
+        async_results.append(task)
+        task = pool.apply_async(pdread_c1, args=(DATA_C1,))
+        async_results.append(task)
+        task = pool.apply_async(pdread_sap, args=(latest_sap_file[0],))
+        async_results.append(task)
+
+        # Закрываем пул для новых задач и ждем выполнения запущенных
+        pool.close()
+
+        # Ожидаем завершения и собираем результаты
+        # print("Ожидание завершения процессов...")
+        results = [task.get() for task in async_results]
+
+    return results
+
+
+def monkey_path2():
+    """Исправление путей в настройках для локального запуска"""
+    global gl_factfile, gl_settings
+    print("Запуск Monkey path")
+
+    if "gl_factfile_mp" in globals():
+        gl_factfile = gl_factfile_mp
+        print("Применен Monkey path gl_factfile")
+    else:
+        print("Ошибка применения Monkey path gl_factfile_mp не найден")
+
+    if "gl_settings_mp" in globals():
+        if gl_settings_mp.get("классификатор"):
+            gl_settings["классификатор"] = gl_settings_mp["классификатор"]
+        if gl_settings_mp.get("путь"):
+            gl_settings["путь"] = gl_settings_mp["путь"]
+        if gl_settings_mp.get("корректировки"):
+            gl_settings["корректировки"] = gl_settings_mp["корректировки"]
+        print("Применен Monkey path gl_settings")
+    else:
+        print("Ошибка применения Monkey path gl_settings_mp не найден")
+
+
+def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
+
+    # добавить склад для позиций в закупке
+    df_in["Склад / Контрагент / Работник"] = "В закупке"
+
+    # выкинуть строки ВП которые уже не ждём
+    badlist = [
+        "0. Преобразовано",
+        "Ожидается снятие",
+        "0. Снято",
+        "13. Поставлено",
+    ]
+    df_in = df_in[~df_in["Статус"].isin(badlist)]
+
+    # привести к формату
+    df_in["Вид деятельности"] = df_in["Вид деятельности"].map(
+        {
+            "Основная деятельность": "МТР",
+            "Оборудование не входящее в смету строек": "ОНСС",
+        }
+    )
+
+    # заполнение наименования для неразыгранных позиций
+    df_in.loc[df_in["Наименование факт"].isna(), "Наименование факт"] = df_in[
+        "Полное имя материала"
+    ]
+
+    # добавление в ВП наменование отдела который её заказал
+    filter = gl_filtersdf[
+        (gl_filtersdf["otdel"] == "ИТ") & (gl_filtersdf["item"] != "бюджетс")
+    ]["sap"]
+    df_in.loc[df_in["/ САП"].isin(filter), "Наименование подразделения"] = "ОИТ"
+
+    filter = gl_filtersdf[
+        (gl_filtersdf["otdel"] == "ОТ") & (gl_filtersdf["item"] != "бюджетс")
+    ]["sap"]
+    df_in.loc[df_in["/ САП"].isin(filter), "Наименование подразделения"] = "ОТ"
+
+    filter = gl_filtersdf[
+        (gl_filtersdf["otdel"] == "АСУТП") & (gl_filtersdf["item"] != "бюджетс")
+    ]["sap"]
+    df_in.loc[df_in["/ САП"].isin(filter), "Наименование подразделения"] = "ОАСУТП"
+
+    # переименование к шаблону 1с
+    df_in.rename(
+        columns={
+            "/ САП": "НомЗаяв",
+            "Вид деятельности": "Вид деят 1с",
+            "Материал": "КСМ",
+            "ЕИ ввода": "Единица измерения",
+            "Наименование факт": "Номенклатура / ОС",
+        },
+        inplace=True,
+        errors="ignore",
+    )
+
+    return df_in
+
+
+def start_parellel(date3y_in=None, date3y_in_tt=None):
+    global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb
 
     # load = False
     load = True
@@ -1029,33 +1185,47 @@ def start_parellel():
     db_name = "db_pandas"
     gl_client = contc(db_name, hostip=serverip, port=int(serverport))
 
-    # выгрузка sap. 2 последних файла с суффиксами {от} и {до}
-    DATA_SAP = "SAP_in"
-    # выгрузка 1С
-    DATA_C1 = "C1_in"
-
     if load:
         startTime = timer(name="Начало чтения входных файлов")
 
-        if (latest_sap_file := find_latest2_file("SAP_in", "*.xlsx")) is None or len(
-            latest_sap_file
-        ) != 2:
-            print("Не удалось найти необходимые файлы данных. Выход.")
-            sys.exit(0)
-        print(f"Найденные файлы в папке {DATA_SAP}: {latest_sap_file}")
-
-        # запуск параллельного считывания файлов excel
-        tasks = [
-            delayed(pdread_sap)(latest_sap_file[1]),
-            delayed(pdread_c1)(DATA_C1),
-            delayed(pdread_sap)(latest_sap_file[0]),
-        ]
-        results = Parallel(n_jobs=-1)(tasks)
+        results = readparallel()
         timer("Чтение завершено.", startTime)
 
-        # слияние и поиск строк не найденных в 1С
-        c1_ost, lost_warn = transform(results[0][0], results[1][0], results[2][0])  # type: ignore
+        sstr = (
+            root.children["notebook"]
+            .children["tab3"]
+            .children["text_conf_list"]
+            .get("1.0", tk.END)  # type: ignore
+        )
+        loadlist = list(eval(sstr))
 
+        gl_settings, gl_filters, gl_filtersdf = loadsettings3(
+            loadlist, dagmode=False, defcolstoload=False
+        )
+        monkey_path2()
+
+        # формирование списка заявок для построения плана поставки
+        # Загрузка кэша ВП заявок с полем "срок"
+        patho = Path(gl_settings["путь"], "вп_corr.prqt")
+        if not patho.is_file():
+            print(f"Нет базы данных {patho}, необходимо запустить 'refresh'")
+            sys.exit(0)
+        print(f"Загрузка кэша возвратного плана из {str(patho.resolve())}")
+        gl_dfb = pd.read_parquet(patho)
+        print(gl_dfb.info())
+
+        # слияние и поиск строк не найденных в 1С
+        c1_ost, lost_warn = transform(
+            results[0][0],
+            results[1][0],
+            results[2][0],
+            date3y_in=date3y_in,
+            date3y_in_tt=date3y_in_tt,
+        )
+
+        gl_dfb = transform_vp(gl_dfb)
+
+        """
         # ==================для тестирования
         # print("запись временного файла")
         # c1_ost.to_excel("c1_ost.xlsx", index=False)
@@ -1086,8 +1256,8 @@ def start_parellel():
         # tmp_writer.close()
         # timer("Завершена запись в промежуточный файл", startTime)
         # print(f"Промежуточный файл сохранен: '{str(Path(filenametosave).resolve())}'")
-        # ===\блок вывода промежуточных файлов для отладки
-
+        # ===\\ блок вывода промежуточных файлов для отладки
+        """
         startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
         intoclickhouse(
             gl_client,
@@ -1142,30 +1312,196 @@ def start_parellel():
     print("Завершено.")
     timer("Итого времени выполнения скрипта", Main_startTime)
     print(f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'")
-    date_lab.config(text="Выполнено!")
-    start_button.config(state="normal")
+
+    try:
+        # date_lab.config(text="Выполнено!")
+        start_button.config(state="normal")
+    except NameError:
+        print("date_lab, start_button is not defined.")
+
+
+def print_all_widget_paths(parent, depth=0):
+    """Рекурсивно обходит и печатает пути всех виджетов."""
+    for widget in parent.winfo_children():
+        # Отступ для визуализации иерархии в консоли
+        indent = "  " * depth
+
+        # Печатаем тип виджета и его Tkinter pathname
+        print(f"{indent}[{widget.winfo_class()}] -> {widget}")
+
+        # Рекурсивно вызываем функцию для детей текущего виджета
+        print_all_widget_paths(widget, depth + 1)
+
+
+def loadconf(root_tk: tk.Tk):
+    """
+    Загрузка из .ini файла или его создание при отсутствии
+    """
+    global gl_config
+    # left_file, \
+    # right_file, \
+    # mol_file, \
+    # molsap_file, \
+    # molsap_file3, \
+    # factf_folder, \
+    # gl_conf_list, \
+    # gl_prpath, \
+    # ost_1c_fname
+    fname = os.path.basename(__file__)
+    # fname=sys.argv[0]
+    conffile = PureWindowsPath(fname).with_suffix(".ini")
+    # print(conffile)
+
+    if os.path.isfile(conffile):
+        print(f"Загрузка найденного конфиг-файл {conffile}")
+        gl_config.read(conffile)
+        # print("config.sections()")
+        # print(config.sections())
+        sap_ost_file = gl_config["default"]["sap_ost_file"]
+        root_tk.nametowidget(".notebook.tab1.sap_ost_editor").insert(
+            tk.END, sap_ost_file
+        )
+
+        c1_ost_file = gl_config["default"]["c1_ost_file"]
+        root_tk.nametowidget(".notebook.tab1.c1_ost_editor").insert(tk.END, c1_ost_file)
+
+        mol_file = gl_config["default"]["mol_file"]
+        molsap_file = gl_config["default"]["molsap_file"]
+        molsap_file3 = gl_config["default"].get("molsap_file3", "")
+        factf_folder = gl_config["default"].get("text_factf", "")
+        # conf_list = list(eval(gl_config["default"].get("text_conf_list", "")))
+        conf_list = gl_config["default"].get("text_conf_list", "")
+        root_tk.children["notebook"].children["tab3"].children["text_conf_list"].insert(  # type: ignore
+            tk.END, conf_list
+        )
+        gl_prpath = gl_config["default"].get("text_gl_prpath")
+        ost_1c_fname = gl_config["default"].get("text_ost_1c_fname", "")
+        # print(root_tk.children)
+        # print(root_tk.children["notebook"])
+
+        # retrieved_button = root_tk.nametowidget(".!notebook.!frame3.text_conflist")
+
+        print_all_widget_paths(root_tk)
+
+    else:
+        sap_ost_file = r"C:\uv\pandas-ch\SAP_in"
+        c1_ost_file = r"C:\uv\pandas-ch\C1_in"
+        mol_file = r"Y:\ilja\source\python\Python-xls\data\склады\март\02.04.2024.xlsx"
+        molsap_file = ""
+        molsap_file3 = ""
+        factf_folder = ""
+        gl_prpath = r"R:\03. ЗГД_ГИ\07. УМАИТТ\06. Общая\!БП\отчеты вп\настройки\Приоритетные КСМ.xlsx"
+        ost_1c_fname = (
+            r"R:\source\python\Python-xls\data\склады\Июль\запас-1с-2025-08-18.xlsx"
+        )
+        loadlist = [
+            "R:/03. ЗГД_ГИ/07. УМАИТТ/06. Общая/!БП/отчеты вп/настройки/ИТ_настройки2.xlsx",
+            "R:/03. ЗГД_ГИ/07. УМАИТТ/06. Общая/!БП/отчеты вп/настройки/ОТ_настройки2.xlsx",
+            "R:/03. ЗГД_ГИ/07. УМАИТТ/06. Общая/!БП/отчеты вп/настройки/АСУТП_настройки2.xlsx",
+        ]
+
+        gl_config["default"] = {}
+        # в имя секции зашить разные пути
+        defc = gl_config["default"]
+        defc["sap_ost_file"] = sap_ost_file
+        defc["c1_ost_file"] = c1_ost_file
+        defc["mol_file"] = mol_file
+        defc["molsap_file"] = molsap_file
+        defc["molsap_file3"] = molsap_file3
+        defc["text_factf"] = factf_folder
+        defc["text_gl_prpath"] = gl_prpath
+        defc["text_gl_prpath"] = ost_1c_fname
+        defc["text_conf_list"] = str(loadlist)
+
+        with open(conffile, "w") as configfile:
+            gl_config.write(configfile)
+            print(f"Настройки сохранены в конфиг-файл {conffile}")
+    return 0
+
+
+def saveconf(vn: str, val: str):
+    global gl_config
+
+    fname = os.path.basename(__file__)
+    conffile = PureWindowsPath(fname).with_suffix(".ini")
+
+    defc = gl_config["default"]
+    defc[vn] = str(val)
+
+    with open(conffile, "w") as configfile:
+        gl_config.write(configfile)
+
+
+def open_file_d(num: int, gedit: tk.Text):
+    """Открытие диалогов и выбор файлов
+    1- левый файл
+    2- правый файл
+    3- остатки по мол-1c
+    4- остатки по мол-sap
+    5- каталог для поиска факта поставки text_factf
+    6- выбор файлов настроек
+    7- выбор файла с выгрузкой счетов
+    8- остатки по мол-sap3
+    """
+    ind = gedit.get("1.0", tk.END).strip()
+    if num == 5:
+        filepath = fd.askdirectory(initialdir=PureWindowsPath(ind))
+    elif num == 6:
+        filepath = fd.askopenfilenames(initialdir=PureWindowsPath(ind))
+    else:
+        if str(PureWindowsPath(ind)) != ".":
+            filepath = fd.askopenfilename(initialdir=PureWindowsPath(ind).parents[0])
+        else:
+            filepath = fd.askopenfilename()
+
+    # R:\source\python\Python-xls\data\факт\помесячно
+    if filepath != "":
+        if type(filepath) is not tuple:
+            filepath = PureWindowsPath(str(filepath))
+
+        match num:
+            case 8 | 7 | 5 | 4 | 3 | 2 | 1:
+                gedit.delete("1.0", tk.END)
+                gedit.insert("1.0", str(filepath))
+                saveconf(gedit.winfo_name(), str(filepath))
+
+            case 6:
+                gedit.delete("1.0", tk.END)
+                if type(filepath) is tuple:
+                    filepath = list(filepath)
+                    gedit.insert(tk.END, str(filepath))
+                    saveconf(gedit.winfo_name(), str(filepath))
+                else:
+                    print("При сохранении списка файлов, что то пошло не так.")
+                    gedit.insert(tk.END, str(filepath))
+            case _:
+                print("Ошибка вызова open_file")
+                return 0
+
+    return 0
 
 
 def interface():
-    global date_lab, start_button
+    global root, start_button
 
     def grad_date():
-        date_lab.config(
-            text="Начато формирование отчета. Дата 3х леток (точная) установлена на: "
-            + cal.get_date()
-        )
+        # date_lab.config(
+        #     text="Начато формирование отчета. Дата 3х леток (точная) установлена на: "
+        #     + cal.get_date()
+        # )
         start_button.config(state="disabled")
         print("подготовка")
-
         root.update()
 
-        start_parellel()
+        start_parellel(
+            date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
+        )
 
     # Create Object
-    root = TK.Tk()
+    # root = TK.Tk()
 
     # Set geometry
-    root.geometry("600x400")
+    # root.geometry("600x400")
 
     # подстройка имен месяцев локали. без подстройки имя месяца выводится в родительном падеже
     locale = Locale("ru_RU")
@@ -1188,33 +1524,287 @@ def interface():
         locale.months["format"]["wide"][ii] = months_name[ii]
 
     # создание и вывод элементов формы
-    head_label = TK.Label(root, text="Выберите дату расчета 3х леток и запустите")
-    head_label.pack(pady=20)
+    # head_label = TK.Label(root, text="Выберите дату расчета 3х леток и запустите")
+    # head_label.pack(pady=20)
 
-    date3y = date(date.today().year - 3, date.today().month, 1) - timedelta(days=1)
-    cal = Calendar(
-        root,
-        selectmode="day",
-        year=date3y.year,
-        month=date3y.month,
-        day=date3y.day,
-        date_pattern="yyyy.mm.dd",
-        locale="ru_RU",
+    # date3y = date(date.today().year - 3, date.today().month, 1) - timedelta(days=1)
+    # cal = Calendar(
+    #     root,
+    #     selectmode="day",
+    #     year=date3y.year,
+    #     month=date3y.month,
+    #     day=date3y.day,
+    #     date_pattern="yyyy.mm.dd",
+    #     locale="ru_RU",
+    # )
+    # cal.pack(pady=20)
+
+    # start_button = TK.Button(root, text="Поехали", command=grad_date)
+    # start_button.pack(fill="x", expand=True, padx=20)
+
+    # date_lab = TK.Label(root, text="")
+    # date_lab.pack(pady=20)
+
+    # # Execute Tkinter
+    # root.mainloop()
+
+    # ===интерфейс из 3year
+
+    root = tk.Tk()  # создаем корневой объект - окно
+    root.title("Расчет статистики по остаткам")  # устанавливаем заголовок окна
+    root.geometry("800x440")  # устанавливаем размеры окна
+
+    tabControl = tk.ttk.Notebook(root, name="notebook")  # type: ignore
+    tab1 = tk.ttk.Frame(tabControl, name="tab1")  # type: ignore
+    tab2 = tk.ttk.Frame(tabControl, name="tab2")  # type: ignore
+    tab3 = tk.ttk.Frame(tabControl, name="tab3")  # type: ignore
+    tabControl.add(tab1, text="Основная")
+    tabControl.add(tab2, text="Инструкция")
+    tabControl.add(tab3, text="Дополнительно")
+
+    tabControl.pack(expand=1, fill="both")
+
+    tk.ttk.Label(  # type: ignore
+        tab2,
+        text="Инструкция по выбору файлов для генерации отчета:\n\
+    1. Файл выгрузки из 1С. Отчет Оборотно сальдовая ведомость.\n\
+    2. Файл выгрузки из SAP с остатками на складах МОЛ -2 месяца.\n\
+    3. Файл выгрузки из SAP с остатками на складах МОЛ за предыдущий месяц.\n\
+    4. Файл выгрузки из SAP с остатками на ЦС за предыдущий месяц.\n\
+       Для выгрузки остатков на продажу в другие ДО.",
+    ).grid(column=0, row=0, padx=30, pady=30)
+
+    tab1.grid_rowconfigure(index=0, weight=1)
+    tab1.grid_rowconfigure(index=1, weight=1)
+    tab1.grid_rowconfigure(index=2, weight=1)
+    tab1.grid_rowconfigure(index=3, weight=1)
+    tab1.grid_rowconfigure(index=4, weight=1)
+    tab1.grid_rowconfigure(index=5, weight=1)
+
+    tab1.grid_columnconfigure(index=0, minsize=10)
+    tab1.grid_columnconfigure(index=1, weight=1)
+    tab1.grid_columnconfigure(index=2, weight=1)
+    tab1.grid_columnconfigure(index=3, weight=1)
+    tab1.grid_columnconfigure(index=4, weight=1)
+    tab1.grid_columnconfigure(index=5, minsize=40)
+
+    for ii in range(0, 6):
+        tab3.grid_rowconfigure(index=ii, weight=1)
+        tab3.grid_columnconfigure(index=ii, weight=1)
+
+    for ii in range(1, 6):
+        tk.Label(tab1, text=str(ii) + ".").grid(column=0, row=ii, padx=0, pady=0)
+
+    # ----наполнение вкладки №3
+    tk.Label(
+        tab3, text="Дополнительные параметры. Путь к файлам с фактом поставки"
+    ).grid(column=0, row=0, columnspan=3, sticky=tk.NSEW)
+
+    for ii in range(6, 9):
+        tk.Label(tab3, text=str(ii) + ".").grid(column=0, row=ii - 5, padx=0, pady=0)
+
+    text_factf = tk.Text(tab3, height=3, name="text_factf")
+    text_factf.grid(column=1, columnspan=3, row=1, sticky=tk.NSEW)
+    # text_factf.insert("1.0", factf_folder)
+    button_factf = tk.Button(
+        tab3,
+        text="Выбрать каталог с \nфайлами факта поставки",
+        command=lambda: open_file_d(5, text_factf),
     )
-    cal.pack(pady=20)
+    button_factf.grid(column=5, row=1, sticky=tk.NSEW, padx=10)
 
-    start_button = TK.Button(root, text="Поехали", command=grad_date)
-    start_button.pack(fill="x", expand=True, padx=20)
+    # выгрузка со счетами
+    # ost_1c_fname
 
-    date_lab = TK.Label(root, text="")
-    date_lab.pack(pady=20)
+    text_ost_1c_fname = tk.Text(tab3, height=3, name="text_ost_1c_fname")
+    text_ost_1c_fname.grid(column=1, columnspan=3, row=2, sticky=tk.NSEW)
+    # text_ost_1c_fname.insert("1.0", ost_1c_fname)
+    button_ost_1c_fname = tk.Button(
+        tab3,
+        text="Выбрать файл с \nвыгрузкой 1с по счетам",
+        command=lambda: open_file_d(7, text_ost_1c_fname),
+    )
 
-    # Execute Tkinter
+    button_ost_1c_fname.grid(column=5, row=2, sticky=tk.NSEW, padx=10)
+
+    # var_factf = tk.IntVar()
+    # var_factf.set(0)
+
+    # c1 = tk.Checkbutton(
+    #     tab3,
+    #     text="Проверка факта",
+    #     variable=var_factf,
+    #     onvalue=1,
+    #     offvalue=0,
+    #     # command=print_selection,
+    # ).grid(column=1, columnspan=3, row=2, sticky=tk.NSEW)
+
+    text_conf_list = tk.Text(tab3, height=3, name="text_conf_list")
+    text_conf_list.grid(column=1, columnspan=3, row=3, sticky=tk.NSEW)
+
+    # text_conflist.insert(tk.END, "[")
+    # for x in gl_conf_list:
+    #     text_conflist.insert(
+    #         tk.END,
+    #         "'" + x + "', ",
+    #     )
+    # text_conflist.delete("end-2c")
+    # text_conflist.delete("end-2c")
+    # text_conflist.insert(tk.END, "]")
+
+    button_conflist = tk.Button(
+        tab3,
+        text="Выбрать файлы\n настроек",
+        command=lambda: open_file_d(6, text_conf_list),
+    )
+    button_conflist.grid(column=5, row=3, sticky=tk.NSEW, padx=10)
+
+    # -------наполнение остальных вкладок
+    # text_mol = tk.Text(tab1, height=3, name="mol_file")
+    # дата полных 3х леток
+    date_year = DateEntry(
+        tab1,
+        locale="ru_RU.UTF-8",
+        date_pattern="dd.mm.yyyy",
+        bg="darkblue",
+        fg="white",
+        width=30,
+    )
+
+    date_year.grid(column=4, row=0, sticky=tk.EW, padx=10, columnspan=2)
+    tk.Label(tab1, text="Дата среза для полных 3х леток->").grid(
+        column=3, row=0, padx=0, pady=0, sticky="e"
+    )
+    dates = date(datetime.now().year - 3, 12, 31)
+    date_year.set_date(dates)
+
+    # дата точных 3х леток
+    date_3y_tt = DateEntry(
+        tab1,
+        locale="ru_RU.UTF-8",
+        date_pattern="dd.mm.yyyy",
+        bg="darkblue",
+        fg="white",
+        width=30,
+    )
+    dates = date(datetime.now().year - 3, datetime.now().month, 1) - timedelta(days=1)
+    date_3y_tt.set_date(dates)
+
+    date_3y_tt.grid(column=4, row=1, sticky=tk.EW, padx=10, columnspan=2)
+    tk.Label(tab1, text="Точная дата среза 3х леток->").grid(
+        column=3, row=1, padx=0, pady=0, sticky="e"
+    )
+
+    # text_mol.grid(column=1, columnspan=3, row=1, sticky=tk.NSEW)
+    # # text_mol.insert("1.0", mol_file)
+    # mol_button = tk.Button(
+    #     tab1,
+    #     text="Выбрать файл \nОСВ из 1С",
+    #     command=lambda: open_file_d(3, text_mol),
+    # )
+    # mol_button.grid(column=5, row=1, sticky=tk.NSEW, padx=10)
+
+    sap_ost_editor = tk.Text(tab1, height=3, name="sap_ost_editor")
+    sap_ost_editor.grid(column=1, columnspan=3, row=2, sticky=tk.NSEW)
+    # left_editor2.insert("1.0", left_file)
+
+    c1_ost_editor = tk.Text(tab1, height=3, name="c1_ost_editor")
+    c1_ost_editor.grid(column=1, columnspan=3, row=3, sticky=tk.NSEW)
+    # right_editor2.insert("1.0", right_file)
+
+    ms_editor2 = tk.Text(tab1, height=3, name="molsap_file")
+    ms_editor2.grid(column=1, columnspan=3, row=4, sticky=tk.NSEW)
+    # ms_editor2.insert("1.0", molsap_file)
+
+    ms_editor3 = tk.Text(tab1, height=3, name="molsap_file3")
+    ms_editor3.grid(column=1, columnspan=3, row=5, sticky=tk.NSEW)
+    # ms_editor3.insert("1.0", molsap_file3)
+
+    # date_left31 = DateEntry(
+    #     tab1,
+    #     locale="ru_RU.UTF-8",
+    #     date_pattern="dd.MM.yyyy",
+    #     bg="darkblue",
+    #     fg="white",
+    #     width=30,
+    # )
+    # dates = date(datetime.now().year - 3, datetime.now().month, 1)
+    # dates = dates.replace(month=dates.month, day=1) - timedelta(days=1)
+    # date_left31.set_date(dates.replace(month=dates.month, day=1) - timedelta(days=1))
+
+    # date_left31.grid(column=4, row=2, sticky=tk.EW, padx=10)
+    # date_right3 = DateEntry(
+    #     tab1,
+    #     locale="ru_RU",
+    #     date_pattern="dd.mm.yyyy",
+    #     bg="darkblue",
+    #     fg="white",
+    #     width=30,
+    # )
+
+    # dates = date(datetime.now().year - 3, datetime.now().month, 1)
+    # date_right3.set_date(dates.replace(month=dates.month, day=1) - timedelta(days=1))
+
+    # date_right3.grid(column=4, row=3, sticky=tk.EW, padx=10)
+
+    open_button = tk.Button(
+        tab1,
+        text="Выбрать путь\nк остаткам\nSAP",
+        command=lambda: open_file_d(1, sap_ost_editor),
+    )
+    open_button.grid(column=4, row=2, sticky=tk.NSEW, padx=10, columnspan=2)
+    open_button2 = tk.Button(
+        tab1,
+        text="Выбрать путь\nк остаткам\n1C",
+        command=lambda: open_file_d(2, c1_ost_editor),
+    )
+    open_button2.grid(column=4, row=3, sticky=tk.NSEW, padx=10, columnspan=2)
+    open_button3 = tk.Button(
+        tab1,
+        text="Выбрать файл \nвыгрузки ЦС\n конечный",
+        command=lambda: open_file_d(4, ms_editor2),
+    )
+    open_button3.grid(column=4, row=4, sticky=tk.NSEW, padx=10, columnspan=2)
+
+    open_button4 = tk.Button(
+        tab1,
+        text="Выбрать файл \nвыгрузки ЦС\n начальный",
+        command=lambda: open_file_d(8, ms_editor3),
+    )
+    open_button4.grid(column=4, row=5, sticky=tk.NSEW, padx=10, columnspan=2)
+
+    start_button = tk.Button(
+        tab1,
+        text="Сформировать",
+        # command=lambda: start_parellel(
+        #     date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
+        # ),
+        command=grad_date,
+    )
+
+    start_button.grid(column=0, row=6, columnspan=6, sticky=tk.NSEW, padx=10, pady=10)
+
+    loadconf(root)
     root.mainloop()
 
 
 if __name__ == "__main__":
+    try:
+        from mp import gl_factfile as gl_factfile_mp  # type: ignore
+        from mp import gl_settings as gl_settings_mp  # type: ignore
+
+        print(
+            f"применен monkey patch import\ngl_factfile_mp={gl_factfile_mp}\ngl_settings_mp={gl_settings_mp}"
+        )
+    except ModuleNotFoundError:
+        print("Не найден mp.py")
+
+    MP.freeze_support()
     print(
         "================================================================Запуск скрипта===="
     )
+
+    # отключение интерфейса для отладки
+    # start_parellel()
+
     interface()
