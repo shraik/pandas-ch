@@ -58,7 +58,7 @@ import re
 
 
 def timer(name: str, startTime=None):
-    """_summary_
+    """_Функция изменения времени выполнения_
 
     Args:
         name (str): Наименование таймера для вывода на консоль.
