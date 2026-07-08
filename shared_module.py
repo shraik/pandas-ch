@@ -74,7 +74,7 @@ def loadsettings3(
     for settfile in filelist:
         try:
             if defcolstoload is True:
-                colstoload = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+                colstoload = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
             else:
                 colstoload = None
 
@@ -232,9 +232,6 @@ def loadsettings3(
             listd = filter.get("СброситьЗ", []) + za_drop
             filter.update({"СброситьЗ": listd})
 
-        # переименование чужих заявок чтобы они попали в отбор
-        df_zai["item"] = df_zai["item"].replace({"заявкач": "заявка"}, regex=True)
-
         # добавление списка на рекласс
         for ii in ["МТР", "ОНСС"]:
             za_rcls = df_zai[(df_zai["item"] == "заявка") & (df_zai["toonss"] == ii)][
@@ -250,6 +247,9 @@ def loadsettings3(
         df_cfg["otdel"] = local_pref
         # df_zai["year_d"] = ""
         df_zai["otdel"] = local_pref
+
+        # переименование чужих заявок чтобы они попали в отбор
+        df_zai["item"] = df_zai["item"].replace({"заявкач": "заявка"}, regex=True)
 
         # удаляем строки не входящие в шаблоны настроек
         dropv = [
@@ -353,6 +353,7 @@ def loadvp3(pathtovp: str) -> bool:
 
             nfiled = datetime(1970, 1, 1)
             file_tl = None
+            dropfile = False
             for file_info in scandir(Path(vpp)):
                 if (
                     file_info.is_file()
@@ -363,10 +364,14 @@ def loadvp3(pathtovp: str) -> bool:
                     if modified > nfiled:
                         nfiled = modified
                         file_tl = file_info
-            print(f"Выбрал файл {file_tl.path}, {nfiled}")
+                if PureWindowsPath(str(file_info.path)).stem.lower() == "drop":
+                    dropfile = True
+
             if file_tl is None:
                 print(f"Не нашел файл .xlsx в каталоге {vpp}")
                 sys.exit(1)
+            else:
+                print(f"Выбрал файл {file_tl.path}, {nfiled}")
             # file_tl = max(list_of_files, key=lambda item: item.stat().st_mtime)
             # print(f"выбран последний по дате файл по маске *.xlsx -> \n{file_tl}")
 
@@ -374,9 +379,14 @@ def loadvp3(pathtovp: str) -> bool:
             file_tl = vpp
             print(f"путь это файл: {file_tl}")
 
-        if check_file_data(engine, nfiled, "ДатаВозвратногоПлана") is False:
+        if (
+            check_file_data(engine, nfiled, "ДатаВозвратногоПлана") is False
+            and dropfile is False
+        ):
             print("файл уже загружен")
         else:
+            if dropfile:
+                print("найден флаг-файл 'drop' файл ВП надо загружать")
             print("файл надо загружать")
 
             file = open(file_tl, mode="rb")
@@ -431,26 +441,25 @@ def saveframe(
     rename_flag = False
 
     # if conn.engine.driver == "crate-python":
-    if False:
-        # замена точек в наименовании колонок на шаблон
-        frame.columns = frame.columns.str.replace(".", "_ТЧК_")
-        rename_flag = True
+    #     # замена точек в наименовании колонок на шаблон
+    #     frame.columns = frame.columns.str.replace(".", "_ТЧК_")
+    #     rename_flag = True
 
-        # frame.to_sql(
-        #     tn,
-        #     conn,
-        #     if_exists=modes,
-        #     index=False,
-        #     method=insert_bulk,
-        # )
-        # conn.exec_driver_sql(f"REFRESH TABLE {tn};")
-    else:
-        frame.to_sql(
-            tn,
-            conn,
-            if_exists=modes,
-            index=False,
-        )
+    #     frame.to_sql(
+    #         tn,
+    #         conn,
+    #         if_exists=modes,
+    #         index=False,
+    #         method=insert_bulk,
+    #     )
+    #     conn.exec_driver_sql(f"REFRESH TABLE {tn};")
+    # else:
+    frame.to_sql(
+        tn,
+        conn,
+        if_exists=modes,
+        index=False,
+    )
     if rename_flag:
         frame.columns = frame.columns.str.replace("_ТЧК_", ".")
 
@@ -500,8 +509,16 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
         # print("name=", fdf_c.idxmax(), "index=", lc_import_df.columns.get_loc(fdf_c.idxmax()))
 
         # преобразование найденого в индексы
-        rowi = fdf_i.idxmax()
-        coli = lc_import_df.columns.get_loc(fdf_c.idxmax())
+        rowi = int(fdf_i.idxmax())
+
+        colraw = lc_import_df.columns.get_loc(str(fdf_c.idxmax()))
+        if type(colraw) is int:
+            coli = int(colraw)
+        else:
+            print("Ошибка при поиске колонки '/ перв'. Выход. (518)")
+            sys.exit(0)
+
+        # coli = int(lc_import_df.columns.get_loc(str(fdf_c.idxmax())))
 
         if (rowi == 0 and coli == 0) and (
             str(lc_import_df.iat[rowi, coli]).lower() != "/ перв"
@@ -677,7 +694,7 @@ def loadfile(
     """Считать excel файл по настройкам, вернуть датафрейм"""
 
     if header_row == []:
-        res = pd.read_excel(filename, nrows=15, sheet_name=sh_name, engine="calamine")
+        res = pd.read_excel(filename, nrows=nrws, sheet_name=sh_name, engine="calamine")
 
     else:
         res = pd.read_excel(
