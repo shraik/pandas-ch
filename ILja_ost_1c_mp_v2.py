@@ -291,14 +291,14 @@ def transform(
     mask = c1_ost["ДатаПервПост"].isna()
     c1_ost.loc[mask, "ДатаПервПост"] = pd.to_datetime(date(2020, 1, 1))
 
+    # преобразовать типы данных
+    c1_ost = make_clean(c1_ost)
+
     # ==================для тестирования
-    # print("запись временного файла 268")
+    # print("запись временного файла 298")
     # c1_ost.to_excel("c1_ost.xlsx", engine="xlsxwriter")
     # sys.exit()
     # ==
-
-    # преобразовать типы данных
-    c1_ost = make_clean(c1_ost)
 
     # c1_ost["Счет"] = c1_ost["Счет"].astype("str")
     # сформировать маску и всё по маске в МТР, остальное в ОНСС
@@ -312,6 +312,20 @@ def transform(
     c1_ost.loc[mask, "Наименование подразделения"] = c1_ost[
         "Склад / Контрагент / Работник"
     ]
+
+    c1_ost.loc[
+        c1_ost["ФИО менеджера"] == "Менеджер УМАИТиТ ОТ", "Наименование подразделения"
+    ] = "ОТ"
+
+    c1_ost.loc[
+        c1_ost["ФИО менеджера"] == "Менеджер УМАИТиТ ОАСУТП",
+        "Наименование подразделения",
+    ] = "ОАСУТП"
+
+    c1_ost.loc[
+        c1_ost["ФИО менеджера"] == "Менеджер УМАИТиТ ОИТ",
+        "Наименование подразделения",
+    ] = "ОИТ"
 
     c1_ost["Наименование подразделения"] = (
         c1_ost["Наименование подразделения"]
@@ -564,7 +578,7 @@ def loadinit() -> configparser.ConfigParser:
     try:
         with open(config_file_path, "r") as f:
             config.read_file(f)
-    except FileNotFoundError, configparser.MissingSectionHeaderError:
+    except (FileNotFoundError, configparser.MissingSectionHeaderError):  # noqa: E501
         config["DEFAULT"] = {
             "file1": r"R:\source\python\Python-xls\data\склады\2026-02-28\все мтр на_27.02.2026.xlsx",
             "file2": r"R:\source\python\Python-xls\data\склады\2026-02-28\Лист в ALVXXL01 (1).xlsx",
@@ -1212,7 +1226,7 @@ def start_parellel(date3y_in=None, date3y_in_tt=None):
             sys.exit(0)
         print(f"Загрузка кэша возвратного плана из {str(patho.resolve())}")
         gl_dfb = pd.read_parquet(patho)
-        print(gl_dfb.info())
+        # print(gl_dfb.info())
 
         # слияние и поиск строк не найденных в 1С
         c1_ost, lost_warn = transform(
@@ -1311,11 +1325,13 @@ def start_parellel(date3y_in=None, date3y_in_tt=None):
 
     print("Завершено.")
     timer("Итого времени выполнения скрипта", Main_startTime)
-    print(f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'")
+    reptxt = f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'"
+    print(reptxt)
 
     try:
         # date_lab.config(text="Выполнено!")
         start_button.config(state="normal")
+        start_button.config(text=reptxt)
     except NameError:
         print("date_lab, start_button is not defined.")
 
@@ -1780,6 +1796,7 @@ def interface():
         #     date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
         # ),
         command=grad_date,
+        height=2,
     )
 
     start_button.grid(column=0, row=6, columnspan=6, sticky=tk.NSEW, padx=10, pady=10)
