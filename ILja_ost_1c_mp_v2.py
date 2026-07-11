@@ -1057,9 +1057,12 @@ def readparallel() -> list:
     возвращает список считанных датафреймов"""
 
     # выгрузка sap. 2 последних файла с суффиксами {от} и {до}
-    DATA_SAP = "SAP_in"
+    DATA_SAP = gl_root.nametowidget(".notebook.tab1.sap_ost_editor").get(
+        "1.0", "end-1c"
+    )
+
     # выгрузка 1С
-    DATA_C1 = "C1_in"
+    DATA_C1 = gl_root.nametowidget(".notebook.tab1.c1_ost_editor").get("1.0", "end-1c")
 
     if (latest_sap_file := find_latest2_file("SAP_in", "*.xlsx")) is None or len(
         latest_sap_file
@@ -1072,7 +1075,6 @@ def readparallel() -> list:
     async_results = []
 
     # 3. Отправляем задачи в пул по одной вручную
-
     # альтернативный вариант получения кол-ва ядер
     # num_workers = os.cpu_count()
     with MP.Pool(MP.cpu_count()) as pool:
@@ -1207,10 +1209,10 @@ def start_parellel(date3y_in=None, date3y_in_tt=None):
         timer("Чтение завершено.", startTime)
 
         sstr = (
-            root.children["notebook"]
+            gl_root.children["notebook"]
             .children["tab3"]
             .children["text_conf_list"]
-            .get("1.0", tk.END)  # type: ignore
+            .get("1.0", "end-1c")  # type: ignore
         )
         loadlist = list(eval(sstr))
 
@@ -1499,26 +1501,25 @@ def open_file_d(num: int, gedit: tk.Text):
 
 
 def interface():
-    global root, start_button
+    global gl_root, start_button
 
     def grad_date():
         # date_lab.config(
         #     text="Начато формирование отчета. Дата 3х леток (точная) установлена на: "
         #     + cal.get_date()
         # )
-        start_button.config(state="disabled")
+        start_button.config(
+            state="disabled",
+            text="Начато формирование отчета. Дата 3х леток (точная) установлена на: "
+            + date_3y_tt.get_date().strftime("%d-%m-%Y"),
+        )
         print("подготовка")
-        root.update()
+
+        gl_root.update()
 
         start_parellel(
             date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
         )
-
-    # Create Object
-    # root = TK.Tk()
-
-    # Set geometry
-    # root.geometry("600x400")
 
     # подстройка имен месяцев локали. без подстройки имя месяца выводится в родительном падеже
     locale = Locale("ru_RU")
@@ -1541,37 +1542,13 @@ def interface():
         locale.months["format"]["wide"][ii] = months_name[ii]
 
     # создание и вывод элементов формы
-    # head_label = TK.Label(root, text="Выберите дату расчета 3х леток и запустите")
-    # head_label.pack(pady=20)
-
-    # date3y = date(date.today().year - 3, date.today().month, 1) - timedelta(days=1)
-    # cal = Calendar(
-    #     root,
-    #     selectmode="day",
-    #     year=date3y.year,
-    #     month=date3y.month,
-    #     day=date3y.day,
-    #     date_pattern="yyyy.mm.dd",
-    #     locale="ru_RU",
-    # )
-    # cal.pack(pady=20)
-
-    # start_button = TK.Button(root, text="Поехали", command=grad_date)
-    # start_button.pack(fill="x", expand=True, padx=20)
-
-    # date_lab = TK.Label(root, text="")
-    # date_lab.pack(pady=20)
-
-    # # Execute Tkinter
-    # root.mainloop()
-
     # ===интерфейс из 3year
 
-    root = tk.Tk()  # создаем корневой объект - окно
-    root.title("Расчет статистики по остаткам")  # устанавливаем заголовок окна
-    root.geometry("800x440")  # устанавливаем размеры окна
+    gl_root = tk.Tk()  # создаем корневой объект - окно
+    gl_root.title("Расчет статистики по остаткам")  # устанавливаем заголовок окна
+    gl_root.geometry("800x440")  # устанавливаем размеры окна
 
-    tabControl = tk.ttk.Notebook(root, name="notebook")  # type: ignore
+    tabControl = tk.ttk.Notebook(gl_root, name="notebook")  # type: ignore
     tab1 = tk.ttk.Frame(tabControl, name="tab1")  # type: ignore
     tab2 = tk.ttk.Frame(tabControl, name="tab2")  # type: ignore
     tab3 = tk.ttk.Frame(tabControl, name="tab3")  # type: ignore
@@ -1633,41 +1610,22 @@ def interface():
     # выгрузка со счетами
     # ost_1c_fname
 
-    text_ost_1c_fname = tk.Text(tab3, height=3, name="text_ost_1c_fname")
+    text_ost_1c_fname = tk.Text(
+        tab3, height=3, name="text_ost_1c_fname", state="disabled"
+    )
     text_ost_1c_fname.grid(column=1, columnspan=3, row=2, sticky=tk.NSEW)
     # text_ost_1c_fname.insert("1.0", ost_1c_fname)
     button_ost_1c_fname = tk.Button(
         tab3,
         text="Выбрать файл с \nвыгрузкой 1с по счетам",
         command=lambda: open_file_d(7, text_ost_1c_fname),
+        state="disabled",
     )
 
     button_ost_1c_fname.grid(column=5, row=2, sticky=tk.NSEW, padx=10)
 
-    # var_factf = tk.IntVar()
-    # var_factf.set(0)
-
-    # c1 = tk.Checkbutton(
-    #     tab3,
-    #     text="Проверка факта",
-    #     variable=var_factf,
-    #     onvalue=1,
-    #     offvalue=0,
-    #     # command=print_selection,
-    # ).grid(column=1, columnspan=3, row=2, sticky=tk.NSEW)
-
     text_conf_list = tk.Text(tab3, height=3, name="text_conf_list")
     text_conf_list.grid(column=1, columnspan=3, row=3, sticky=tk.NSEW)
-
-    # text_conflist.insert(tk.END, "[")
-    # for x in gl_conf_list:
-    #     text_conflist.insert(
-    #         tk.END,
-    #         "'" + x + "', ",
-    #     )
-    # text_conflist.delete("end-2c")
-    # text_conflist.delete("end-2c")
-    # text_conflist.insert(tk.END, "]")
 
     button_conflist = tk.Button(
         tab3,
@@ -1677,8 +1635,7 @@ def interface():
     button_conflist.grid(column=5, row=3, sticky=tk.NSEW, padx=10)
 
     # -------наполнение остальных вкладок
-    # text_mol = tk.Text(tab1, height=3, name="mol_file")
-    # дата полных 3х леток
+    # дата полных(до конца года) 3х леток
     date_year = DateEntry(
         tab1,
         locale="ru_RU.UTF-8",
@@ -1712,15 +1669,6 @@ def interface():
         column=3, row=1, padx=0, pady=0, sticky="e"
     )
 
-    # text_mol.grid(column=1, columnspan=3, row=1, sticky=tk.NSEW)
-    # # text_mol.insert("1.0", mol_file)
-    # mol_button = tk.Button(
-    #     tab1,
-    #     text="Выбрать файл \nОСВ из 1С",
-    #     command=lambda: open_file_d(3, text_mol),
-    # )
-    # mol_button.grid(column=5, row=1, sticky=tk.NSEW, padx=10)
-
     sap_ost_editor = tk.Text(tab1, height=3, name="sap_ost_editor")
     sap_ost_editor.grid(column=1, columnspan=3, row=2, sticky=tk.NSEW)
     # left_editor2.insert("1.0", left_file)
@@ -1729,40 +1677,13 @@ def interface():
     c1_ost_editor.grid(column=1, columnspan=3, row=3, sticky=tk.NSEW)
     # right_editor2.insert("1.0", right_file)
 
-    ms_editor2 = tk.Text(tab1, height=3, name="molsap_file")
+    ms_editor2 = tk.Text(tab1, height=3, name="molsap_file", state="disabled")
     ms_editor2.grid(column=1, columnspan=3, row=4, sticky=tk.NSEW)
     # ms_editor2.insert("1.0", molsap_file)
 
-    ms_editor3 = tk.Text(tab1, height=3, name="molsap_file3")
+    ms_editor3 = tk.Text(tab1, height=3, name="molsap_file3", state="disabled")
     ms_editor3.grid(column=1, columnspan=3, row=5, sticky=tk.NSEW)
     # ms_editor3.insert("1.0", molsap_file3)
-
-    # date_left31 = DateEntry(
-    #     tab1,
-    #     locale="ru_RU.UTF-8",
-    #     date_pattern="dd.MM.yyyy",
-    #     bg="darkblue",
-    #     fg="white",
-    #     width=30,
-    # )
-    # dates = date(datetime.now().year - 3, datetime.now().month, 1)
-    # dates = dates.replace(month=dates.month, day=1) - timedelta(days=1)
-    # date_left31.set_date(dates.replace(month=dates.month, day=1) - timedelta(days=1))
-
-    # date_left31.grid(column=4, row=2, sticky=tk.EW, padx=10)
-    # date_right3 = DateEntry(
-    #     tab1,
-    #     locale="ru_RU",
-    #     date_pattern="dd.mm.yyyy",
-    #     bg="darkblue",
-    #     fg="white",
-    #     width=30,
-    # )
-
-    # dates = date(datetime.now().year - 3, datetime.now().month, 1)
-    # date_right3.set_date(dates.replace(month=dates.month, day=1) - timedelta(days=1))
-
-    # date_right3.grid(column=4, row=3, sticky=tk.EW, padx=10)
 
     open_button = tk.Button(
         tab1,
@@ -1780,6 +1701,7 @@ def interface():
         tab1,
         text="Выбрать файл \nвыгрузки ЦС\n конечный",
         command=lambda: open_file_d(4, ms_editor2),
+        state="disabled",
     )
     open_button3.grid(column=4, row=4, sticky=tk.NSEW, padx=10, columnspan=2)
 
@@ -1787,6 +1709,7 @@ def interface():
         tab1,
         text="Выбрать файл \nвыгрузки ЦС\n начальный",
         command=lambda: open_file_d(8, ms_editor3),
+        state="disabled",
     )
     open_button4.grid(column=4, row=5, sticky=tk.NSEW, padx=10, columnspan=2)
 
@@ -1797,13 +1720,14 @@ def interface():
         #     date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
         # ),
         command=grad_date,
+        wraplength=770,
         height=2,
     )
 
     start_button.grid(column=0, row=6, columnspan=6, sticky=tk.NSEW, padx=10, pady=10)
 
-    loadconf(root)
-    root.mainloop()
+    loadconf(gl_root)
+    gl_root.mainloop()
 
 
 if __name__ == "__main__":
