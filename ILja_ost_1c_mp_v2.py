@@ -1451,7 +1451,7 @@ def saveconf(vn: str, val: str):
         gl_config.write(configfile)
 
 
-def open_file_d(num: int, gedit: tk.Text):
+def open_file_d(num: int, gedit: tk.Text, getfolder: bool = False):
     """Открытие диалогов и выбор файлов
     1- левый файл
     2- правый файл
@@ -1463,10 +1463,12 @@ def open_file_d(num: int, gedit: tk.Text):
     8- остатки по мол-sap3
     """
     ind = gedit.get("1.0", tk.END).strip()
-    if num == 5:
-        filepath = fd.askdirectory(initialdir=PureWindowsPath(ind))
-    elif num == 6:
-        filepath = fd.askopenfilenames(initialdir=PureWindowsPath(ind))
+    if getfolder is True:
+        if str(PureWindowsPath(ind)) != ".":
+            filepath = fd.askdirectory(initialdir=PureWindowsPath(ind))
+        else:
+            filepath = fd.askdirectory()
+
     else:
         if str(PureWindowsPath(ind)) != ".":
             filepath = fd.askopenfilename(initialdir=PureWindowsPath(ind).parents[0])
@@ -1688,13 +1690,13 @@ def interface():
     open_button = tk.Button(
         tab1,
         text="Выбрать путь\nк остаткам\nSAP",
-        command=lambda: open_file_d(1, sap_ost_editor),
+        command=lambda: open_file_d(1, sap_ost_editor, getfolder=True),
     )
     open_button.grid(column=4, row=2, sticky=tk.NSEW, padx=10, columnspan=2)
     open_button2 = tk.Button(
         tab1,
         text="Выбрать путь\nк остаткам\n1C",
-        command=lambda: open_file_d(2, c1_ost_editor),
+        command=lambda: open_file_d(2, c1_ost_editor, getfolder=True),
     )
     open_button2.grid(column=4, row=3, sticky=tk.NSEW, padx=10, columnspan=2)
     open_button3 = tk.Button(
