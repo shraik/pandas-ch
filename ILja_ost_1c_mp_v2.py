@@ -36,6 +36,7 @@ from tkinter import filedialog as fd
 from tkcalendar import DateEntry
 
 from babel import Locale
+from dataclasses import dataclass
 
 
 gl_config = configparser.ConfigParser()
@@ -46,6 +47,13 @@ gl_format1 = None
 gl_format0 = None
 gl_wrap_format = None
 gl_back_addr = {}
+
+
+@dataclass
+class Datcls:
+    name: str
+    vp: pd.DataFrame
+    c1_filter: pd.DataFrame
 
 
 def save_ws(ldf: pd.DataFrame, ws: Worksheet, add_filter=False):
@@ -868,6 +876,17 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     return cur_row + len(itogt2.index) + 2
 
 
+def combined(db_l: Datcls):
+    c1l = db_l.c1_filter
+
+    goodlist = ["Счет", "Номенклатура / ОС", "КСМ"]
+    res = c1l[goodlist]
+
+    res.to_excel(gl_writer, sheet_name="Объединение", index=False)
+
+    return 0
+
+
 def report(
     dfl: pd.DataFrame,
     files: tuple,
@@ -904,7 +923,6 @@ def report(
     # записать возвратный план
     ws_vp = workbook.add_worksheet("ВП")
     save_ws(gl_dfb, ws_vp, add_filter=True)
-
     gl_filtersdf.to_excel(gl_writer, sheet_name="filters", index=False)
 
     goodlist = [
@@ -982,6 +1000,11 @@ def report(
     # записать в excel выборку колонок
     # dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
     save_ws(dfl_s, wsfilter, add_filter=True)
+
+    # сборка датакласса для передачи
+
+    Gl_db = Datcls(name="databases", vp=gl_dfb, c1_filter=dfl_s)
+    combined(Gl_db)
 
     if toch and client is not None:
         intoclickhouse(
