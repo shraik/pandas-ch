@@ -1394,6 +1394,8 @@ def loadconf(root_tk: tk.Tk):
     conffile = PureWindowsPath(fname).with_suffix(".ini")
     # print(conffile)
 
+    # TODO сделать считывание по именам виджетов
+
     if os.path.isfile(conffile):
         print(f"Загрузка найденного конфиг-файл {conffile}")
         gl_config.read(conffile)
@@ -1474,7 +1476,9 @@ def saveconf(vn: str, val: str):
         gl_config.write(configfile)
 
 
-def open_file_d(num: int, gedit: tk.Text, getfolder: bool = False):
+def open_file_d(
+    num: int, gedit: tk.Text, getfolder: bool = False, multiplefiles: bool = False
+):
     """Открытие диалогов и выбор файлов
     1- левый файл
     2- правый файл
@@ -1494,9 +1498,19 @@ def open_file_d(num: int, gedit: tk.Text, getfolder: bool = False):
 
     else:
         if str(PureWindowsPath(ind)) != ".":
-            filepath = fd.askopenfilename(initialdir=PureWindowsPath(ind).parents[0])
+            if multiplefiles is True:
+                filepath = fd.askopenfilenames(
+                    initialdir=PureWindowsPath(ind).parents[0]
+                )
+            else:
+                filepath = fd.askopenfilename(
+                    initialdir=PureWindowsPath(ind).parents[0]
+                )
         else:
-            filepath = fd.askopenfilename()
+            if multiplefiles is True:
+                filepath = fd.askopenfilenames()
+            else:
+                filepath = fd.askopenfilename()
 
     # R:\source\python\Python-xls\data\факт\помесячно
     if filepath != "":
@@ -1507,14 +1521,18 @@ def open_file_d(num: int, gedit: tk.Text, getfolder: bool = False):
             case 8 | 7 | 5 | 4 | 3 | 2 | 1:
                 gedit.delete("1.0", tk.END)
                 gedit.insert("1.0", str(filepath))
-                saveconf(gedit.winfo_name(), str(filepath))
+                # saveconf(gedit.winfo_name(), str(filepath))
+                saveconf(str(gedit), str(filepath))
 
             case 6:
                 gedit.delete("1.0", tk.END)
                 if type(filepath) is tuple:
+                    print(filepath)
                     filepath = list(filepath)
+                    print(filepath)
                     gedit.insert(tk.END, str(filepath))
-                    saveconf(gedit.winfo_name(), str(filepath))
+                    # saveconf(gedit.winfo_name(), str(filepath))
+                    saveconf(str(gedit), str(filepath))
                 else:
                     print("При сохранении списка файлов, что то пошло не так.")
                     gedit.insert(tk.END, str(filepath))
@@ -1655,7 +1673,7 @@ def interface():
     button_conflist = tk.Button(
         tab3,
         text="Выбрать файлы\n настроек",
-        command=lambda: open_file_d(6, text_conf_list),
+        command=lambda: open_file_d(6, text_conf_list, multiplefiles=True),
     )
     button_conflist.grid(column=5, row=3, sticky=tk.NSEW, padx=10)
 
