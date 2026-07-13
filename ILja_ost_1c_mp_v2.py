@@ -1380,86 +1380,45 @@ def loadconf(root_tk: tk.Tk):
     Загрузка из .ini файла или его создание при отсутствии
     """
     global gl_config
-    # left_file, \
-    # right_file, \
-    # mol_file, \
-    # molsap_file, \
-    # molsap_file3, \
-    # factf_folder, \
-    # gl_conf_list, \
-    # gl_prpath, \
-    # ost_1c_fname
     fname = os.path.basename(__file__)
     # fname=sys.argv[0]
     conffile = PureWindowsPath(fname).with_suffix(".ini")
-    # print(conffile)
-
-    # TODO сделать считывание по именам виджетов
 
     if os.path.isfile(conffile):
         print(f"Загрузка найденного конфиг-файл {conffile}")
         gl_config.read(conffile)
-        # print("config.sections()")
-        # print(config.sections())
-        sap_ost_file = gl_config["default"]["sap_ost_file"]
-        root_tk.nametowidget(".notebook.tab1.sap_ost_editor").insert(
-            tk.END, sap_ost_file
-        )
 
-        c1_ost_file = gl_config["default"]["c1_ost_file"]
-        root_tk.nametowidget(".notebook.tab1.c1_ost_editor").insert(tk.END, c1_ost_file)
+        # читаем ключи настроек и пробуем искать виджеты по именам, если виджет найден,
+        # то вставляем в него значение из конфига
+        for k, v in gl_config.items("default"):
+            # print(f"{k} = {v}")
+            try:
+                wdg = root_tk.nametowidget(k)
+                wdg.insert(tk.END, v)
+            except KeyError:
+                pass
 
-        mol_file = gl_config["default"]["mol_file"]
-        molsap_file = gl_config["default"]["molsap_file"]
-        molsap_file3 = gl_config["default"].get("molsap_file3", "")
-        factf_folder = gl_config["default"].get("text_factf", "")
-        # conf_list = list(eval(gl_config["default"].get("text_conf_list", "")))
-        conf_list = gl_config["default"].get("text_conf_list", "")
-        root_tk.children["notebook"].children["tab3"].children["text_conf_list"].insert(  # type: ignore
-            tk.END, conf_list
-        )
-        gl_prpath = gl_config["default"].get("text_gl_prpath")
-        ost_1c_fname = gl_config["default"].get("text_ost_1c_fname", "")
-        # print(root_tk.children)
-        # print(root_tk.children["notebook"])
-
-        # retrieved_button = root_tk.nametowidget(".!notebook.!frame3.text_conflist")
-
+        print("1414 print_all_widget_paths")
         print_all_widget_paths(root_tk)
 
     else:
-        sap_ost_file = r"C:\uv\pandas-ch\SAP_in"
-        c1_ost_file = r"C:\uv\pandas-ch\C1_in"
-        mol_file = r"Y:\ilja\source\python\Python-xls\data\склады\март\02.04.2024.xlsx"
-        molsap_file = ""
-        molsap_file3 = ""
-        factf_folder = ""
-        gl_prpath = r"R:\03. ЗГД_ГИ\07. УМАИТТ\06. Общая\!БП\отчеты вп\настройки\Приоритетные КСМ.xlsx"
-        ost_1c_fname = (
-            r"R:\source\python\Python-xls\data\склады\Июль\запас-1с-2025-08-18.xlsx"
-        )
-        loadlist = [
-            "R:/03. ЗГД_ГИ/07. УМАИТТ/06. Общая/!БП/отчеты вп/настройки/ИТ_настройки2.xlsx",
-            "R:/03. ЗГД_ГИ/07. УМАИТТ/06. Общая/!БП/отчеты вп/настройки/ОТ_настройки2.xlsx",
-            "R:/03. ЗГД_ГИ/07. УМАИТТ/06. Общая/!БП/отчеты вп/настройки/АСУТП_настройки2.xlsx",
-        ]
-
+        # записываем в конфиг-файл значения по умолчанию
+        defdict = {
+            ".notebook.tab1.sap_ost_editor": "C:\\uv\\pandas-ch\\SAP_in",
+            ".notebook.tab1.c1_ost_editor": "C:\\uv\\pandas-ch\\C1_in",
+            ".notebook.tab3.text_conf_list": "['R:/source/python/Python-xls/data/настройки/ИТ_настройки2.xlsx', 'R:/source/python/Python-xls/data/настройки/ОТ_настройки2.xlsx',  'R:/source/python/Python-xls/data/настройки/АСУТП_настройки2.xlsx']",
+        }
         gl_config["default"] = {}
-        # в имя секции зашить разные пути
         defc = gl_config["default"]
-        defc["sap_ost_file"] = sap_ost_file
-        defc["c1_ost_file"] = c1_ost_file
-        defc["mol_file"] = mol_file
-        defc["molsap_file"] = molsap_file
-        defc["molsap_file3"] = molsap_file3
-        defc["text_factf"] = factf_folder
-        defc["text_gl_prpath"] = gl_prpath
-        defc["text_gl_prpath"] = ost_1c_fname
-        defc["text_conf_list"] = str(loadlist)
+        for k, v in defdict.items():
+            defc[k] = v
 
         with open(conffile, "w") as configfile:
             gl_config.write(configfile)
-            print(f"Настройки сохранены в конфиг-файл {conffile}")
+            print(f"Настройки по умолчанию сохранены в конфиг-файл {conffile}")
+
+        # считываем вновь созданный конфиг-файл и вставляем значения в виджеты
+        loadconf(root_tk)
     return 0
 
 
