@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 from typing import Optional
 from numpy import nan as NP_NAN
+from math import ceil
 
 import pandas as pd
 from clickhouse_connect import driver as ch_driver
@@ -876,11 +877,58 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     return cur_row + len(itogt2.index) + 2
 
 
+def mfunc1(inpt: pd.Series, l_today) -> pd.Series:
+    """вычисление и добавление на фрейм плана по списанию"""
+    if inpt["НаимКатегорииЗапаса"] not in {
+        "Аварийные запасы МТР",
+        "Запасы под потребность других ОГ",
+        "Невостребованные ликвидные МТР (НВЛ)",
+    }:
+        m1 = inpt["m1"]
+        # l_today = pd.to_datetime("today")
+
+        raspr = inpt["Количество"]
+        # dsp = pd.to_datetime("today").strftime("%Y-%m")
+        dsp = l_today.strftime("%Y-%m")
+        mon = 0
+
+        if inpt["ДатаПервПост_кор"] > l_today:
+            mnth_shift = inpt["ДатаПервПост_кор"]
+        else:
+            mnth_shift = l_today
+
+        # если разовое распределение, то всё кол-во откидываем на след месяц
+        if inpt.get("spv") == "разовое":
+            cum = raspr
+            dsp = "м_" + (mnth_shift + pd.offsets.DateOffset(months=mon + 1)).strftime(
+                "%Y_%m"
+            )
+            inpt[dsp] = cum * inpt["УчетнЦена"]
+            inpt[dsp + "_шт"] = cum
+
+        else:
+            while raspr > 0:
+                if m1 > 0:
+                    cum = ceil(raspr / (m1 - mon))
+                else:
+                    cum = raspr
+                dsp = "м_" + (mnth_shift + pd.offsets.DateOffset(months=mon)).strftime(
+                    "%Y_%m"
+                )
+                inpt[dsp] = cum * inpt["УчетнЦена"]
+                inpt[dsp + "_шт"] = cum
+
+                raspr -= cum
+                mon += 1
+
+    return inpt
+
+
 def combined(db_l: Datcls):
     """Объединение остатков и ВП и запись в отчет
 
     Args:
-        db_l (Datcls): _description_
+        db_l (Datcls): Датакласс с входными датафреймами
 
     Returns:
         _type_: _description_
@@ -899,6 +947,7 @@ def combined(db_l: Datcls):
         "Вид деят 1с",
         "Наименование подразделения",
         "Наименование категории запаса",
+        "Версия2",
     ]
     # print(db_l.c1_filter.dtypes)
 
@@ -975,8 +1024,12 @@ def combined(db_l: Datcls):
         columns={
             "Склад / Контрагент / Работник": "Склад",
             "Наименование категории запаса": "НаимКатегорииЗапаса",
+            "Версия2": "ДатОстатка",
+            "Кол-во в ЕИ": "Количество",
         }
     )
+    res["ДатОстатка"] = res["ДатОстатка"].ffill()
+    res["УчетнЦена"] = res["Сумма (без НДС)"] / res["Количество"]
 
     # упорядочивание колонок слева
     lcl = [
@@ -994,7 +1047,47 @@ def combined(db_l: Datcls):
     columns = [x for x in res.columns if x not in lcl]
     res = res[lcl + columns]
 
+    edge_date = pd.to_datetime(date(datetime.today().year, 1, 1))
+    res["ДатаПервПост_кор"] = res["ДатаПервПост"].where(
+        res["ДатаПервПост"] >= edge_date, other=edge_date
+    )
+    res["ТекДат"] = pd.to_datetime("today").date()
+
+    # крайняя дата скорректированной дате + год
+    res["КрайДат"] = res["ДатаПервПост_кор"] + pd.offsets.DateOffset(years=1)
+
+    # вычислить кол-во месяцев для списания
+    res["m1"] = res["КрайДат"].dt.to_period("M").astype("int64") - pd.to_datetime(
+        ["today"]
+    ).to_period("M").astype("int64")
+    res["m1"] = res["m1"].where(res["m1"] <= 12, other=12)
+
+    cols_to_move_l = res.columns.tolist()
+    ll_today = pd.to_datetime("today")
+    res = res.apply(mfunc1, args=(ll_today,), axis=1)
+    res = res[cols_to_move_l + [x for x in res.columns if x not in cols_to_move_l]]
+
+    # преобразование wide to long
+    res2 = res.reset_index()
+    res_long = (
+        pd.wide_to_long(
+            res2,
+            i=["index"],
+            j="values",
+            stubnames=["м"],
+            sep="_",
+            suffix=r"\d{4}_\d{2}(?:_шт)?",
+        )
+        .dropna(subset="м")
+        .reset_index()
+        .drop(columns="index")
+    )
+    res_long = res_long[
+        cols_to_move_l + [x for x in res_long.columns if x not in cols_to_move_l]
+    ]
+
     res.to_excel(gl_writer, sheet_name="Объединение", index=False)
+    res_long.to_excel(gl_writer, sheet_name="Объединение_L", index=False)
 
     return 0
 
