@@ -1938,6 +1938,10 @@ def interface():
     start_button.grid(column=0, row=6, columnspan=6, sticky=tk.NSEW, padx=10, pady=10)
 
     loadconf(gl_root)
+
+    # программный автозапуск
+    start_button.invoke()
+
     gl_root.mainloop()
 
 
