@@ -1,4 +1,5 @@
-# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp.py
+# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
+# pyinstaller --onefile --noconfirm --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
 # Вариант с использованием библиотеки "multiprocessing" для совместимости с pyinstaller
 
 import multiprocessing as MP
