@@ -15,8 +15,8 @@ from math import ceil
 from pathlib import Path, PureWindowsPath
 from threading import Thread
 from tkinter import filedialog as fd
-from typing import Optional
 
+# from typing import Optional
 import pandas as pd
 from babel import Locale
 from clickhouse_connect import driver as ch_driver
@@ -485,11 +485,12 @@ def load_mol_excel(
     # дикт для переименования найденных колонок
     renmd = {}
 
-    for li in clumns:
+    for li, cl_val in clumns.items():
         dfit = next((x for x in lisc if x.find(li) > -1), "Not found")
         if dfit != "Not found":
             resl.append(dfit)
-            renmd[dfit] = clumns[li]
+            # renmd[dfit] = clumns[li]
+            renmd[dfit] = cl_val
         else:
             # print(f'Ошибка. Не нашел колонку "{li}" в списке колонок: {lisc} ')
             print(f'\n--ОСВ Ошибка. Не нашел колонку "{li}" в списке колонок')
@@ -679,7 +680,8 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         }
     Возвращает высоту выведённой таблицы
     """
-    global gl_format1, gl_link_format, gl_back_addr
+    # global gl_format1, gl_link_format, gl_back_addr
+    global gl_back_addr
     # счетчик страниц для уникальности ссылок
     sh_count = 0
 
@@ -734,7 +736,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
             dff: pd.DataFrame = mol_pd[ffilter]
 
         sheetname = param["префиксл"] + "_" + str(sh_count)
-        sh_count += 1
+        sh_count += 1  # noqa: SIM113
 
         # удалить пустые колонки из расшифровок
         dff = dff.dropna(axis="columns", how="all")
@@ -1045,7 +1047,7 @@ def combined(db_l: Datcls):
     columns = [x for x in res.columns if x not in lcl]
     res = res[lcl + columns]
 
-    edge_date = pd.to_datetime(date(datetime.today().year, 1, 1))
+    edge_date = pd.to_datetime(date(datetime.now(tz=UTC).year, 1, 1))
     res["ДатаПервПост_кор"] = res["ДатаПервПост"].where(
         res["ДатаПервПост"] >= edge_date, other=edge_date
     )
@@ -1094,7 +1096,7 @@ def report(
     dfl: pd.DataFrame,
     files: tuple,
     toch=False,
-    client: Optional[ch_driver.Client] = None,
+    client: ch_driver.Client | None = None,
     tablename="c1_ost_filter",
 ):
     """Формирование выходного отчета. Запись промежуточной таблицы в Clickhouse
@@ -1258,10 +1260,8 @@ def report(
         f"Остатки из файла: {files[1]}",
         f"Дата прихода и конечный остаток центральных складов из файла: {files[0]}",
         f"Начальный остаток центральных складов из файла: {files[2]}",
-        "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой "
-        "2020-01-01"
-        "",
-        f"Всё что пришло {date(datetime.now().year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date(datetime.now().year - 3, date.today().month, 1) - timedelta(days=1)}",
+        "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой '2020-01-01'",
+        f"Всё что пришло {date(datetime.now(UTC).year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1) - timedelta(days=1)}",
     )
 
     wssumm.write_column(0, 0, listmessage)
@@ -1458,7 +1458,7 @@ def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
         if not patho.is_file():
             print(f"Нет базы данных {patho}, необходимо запустить 'refresh'")
             sys.exit(0)
-        print(f"Загрузка кэша возвратного плана из {str(patho.resolve())}")
+        print(f"Загрузка кэша возвратного плана из {patho.resolve()!s}")
         gl_dfb = pd.read_parquet(patho)
         # print(gl_dfb.info())
 
@@ -1559,7 +1559,7 @@ def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
 
     print("Завершено.")
     timer("Итого времени выполнения скрипта", Main_startTime)
-    reptxt = f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'"
+    reptxt = f"Отчет сформирован в файле: '{Path(repfile).resolve()!s}'"
     print(reptxt)
 
     return reptxt
@@ -1637,8 +1637,9 @@ def saveconf(vn: str, val: str):
     fname = os.path.basename(__file__)
     conffile = PureWindowsPath(fname).with_suffix(".ini")
 
-    defc = gl_config["default"]
-    defc[vn] = str(val)
+    # defc = gl_config["default"]
+    # defc[vn] = str(val)
+    gl_config["default"][vn] = str(val)
 
     with open(conffile, "w") as configfile:
         gl_config.write(configfile)
