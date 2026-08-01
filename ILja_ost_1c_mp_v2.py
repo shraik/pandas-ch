@@ -1,4 +1,5 @@
 # pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
+# pyinstaller --onefile --noconfirm --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
 # Вариант с использованием библиотеки "multiprocessing" для совместимости с pyinstaller
 
 import configparser
@@ -535,7 +536,7 @@ def find_latest_file(directory: str, pattern: str) -> str | None:
     except FileNotFoundError:
         print(f"Ошибка: Каталог '{directory}' не найден.")
         return None
-    except Exception as e:
+    except OSError as e:
         print(f"Произошла непредвиденная ошибка: {e}")
         return None
 
@@ -574,7 +575,7 @@ def find_latest2_file(directory: str, pattern: str) -> list[str] | None:
     except FileNotFoundError:
         print(f"Ошибка: Каталог '{directory}' не найден.")
         return None
-    except Exception as e:
+    except OSError as e:
         print(f"Произошла непредвиденная ошибка: {e}")
         return None
 
@@ -596,7 +597,7 @@ def loadinit() -> configparser.ConfigParser:
         }
         with open(config_file_path, "w") as configfile:
             config.write(configfile)
-    except Exception as e:
+    except OSError as e:
         print(f"An unexpected error occurred while reading the file: {e}")
         sys.exit(1)
 
@@ -680,8 +681,6 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         }
     Возвращает высоту выведённой таблицы
     """
-    # global gl_format1, gl_link_format, gl_back_addr
-    global gl_back_addr
     # счетчик страниц для уникальности ссылок
     sh_count = 0
 
@@ -1108,7 +1107,6 @@ def report(
         client (ch_driver.Client, optional): Клиент соединения с БД. Defaults to None.
         tablename (str, optional): Имя таблицы для записи в БД. Defaults to "c1_ost_filter".
     """
-    global gl_writer
 
     workbook = gl_writer.book
     wssumm = workbook.add_worksheet("Суммы")
@@ -1324,7 +1322,8 @@ def readparallel() -> list:
 
 def monkey_path2():
     """Исправление путей в настройках для локального запуска"""
-    global gl_factfile, gl_settings
+
+    global gl_factfile
     print("Запуск Monkey path")
 
     if "gl_factfile_mp" in globals():
@@ -1588,7 +1587,7 @@ def loadconf(root_tk: tk.Tk):
     """
     Загрузка из .ini файла или его создание при отсутствии
     """
-    global gl_config
+
     fname = os.path.basename(__file__)
     # fname=sys.argv[0]
     conffile = PureWindowsPath(fname).with_suffix(".ini")
@@ -1632,7 +1631,6 @@ def loadconf(root_tk: tk.Tk):
 
 
 def saveconf(vn: str, val: str):
-    global gl_config
 
     fname = os.path.basename(__file__)
     conffile = PureWindowsPath(fname).with_suffix(".ini")
