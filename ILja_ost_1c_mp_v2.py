@@ -1,25 +1,31 @@
-# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp.py
+# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
 # Вариант с использованием библиотеки "multiprocessing" для совместимости с pyinstaller
 
-import multiprocessing as MP
 import configparser
-import re
-import sys
-from datetime import date, datetime, timedelta
-from pathlib import Path, PureWindowsPath
-from typing import Optional
-from numpy import nan as NP_NAN
-from math import ceil
-
-import pandas as pd
-from clickhouse_connect import driver as ch_driver
+import multiprocessing as MultiProcess
 
 # from joblib import Parallel, delayed
 import os
+import re
+import sys
+import tkinter as tk
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from math import ceil
+from pathlib import Path, PureWindowsPath
+from threading import Thread
+from tkinter import filedialog as fd
+from typing import Optional
 
+import pandas as pd
+from babel import Locale
+from clickhouse_connect import driver as ch_driver
+from numpy import nan as NP_NAN
+
+# from tkcalendar import Calendar, DateEntry
+from tkcalendar import DateEntry
 from xlsxwriter.worksheet import Worksheet
 
-from shared_module import loadsettings3
 from shared_chouse import (
     contc,
     # save_file_data_ch,
@@ -29,16 +35,7 @@ from shared_chouse import (
     # load_mol_сh,
     timer,
 )
-
-import tkinter as tk
-from tkinter import filedialog as fd
-
-# from tkcalendar import Calendar, DateEntry
-from tkcalendar import DateEntry
-
-from babel import Locale
-from dataclasses import dataclass
-
+from shared_module import loadsettings3
 
 gl_config = configparser.ConfigParser()
 
@@ -370,7 +367,8 @@ def transform(
     if date3y_in_tt is None:
         # вычисляем конец прошлого месяца -3 года
         date3y = pd.to_datetime(
-            date(datetime.now().year - 3, date.today().month, 1) - timedelta(days=1)
+            date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1)
+            - timedelta(days=1)
         )
     else:
         date3y = pd.to_datetime(date3y_in_tt)
@@ -386,7 +384,7 @@ def transform(
     # добавление 3х леток на конец года
     if date3y_in is None:
         # вычисляем конец прошлого месяца -3 года
-        date3y = pd.to_datetime(date(datetime.now().year - 3, 12, 31))
+        date3y = pd.to_datetime(date(datetime.now(UTC).year - 3, 12, 31))
     else:
         date3y = pd.to_datetime(date3y_in)
 
@@ -480,7 +478,7 @@ def load_mol_excel(
     #     f"--ОСВ список прочитанных колонок в файле {str(Path(filename).resolve())}: {lisc}, \nколичество колонок: {len(lisc)}"
     # )
     print(
-        f"--ОСВ прочитанных колонок в файле {str(Path(filename).resolve())}: {len(lisc)}"
+        f"--ОСВ прочитанных колонок в файле {Path(filename).resolve()!s}: {len(lisc)}"
     )
     # список найденных имён колонок
     resl = []
@@ -1305,7 +1303,8 @@ def readparallel() -> list:
     # 3. Отправляем задачи в пул по одной вручную
     # альтернативный вариант получения кол-ва ядер
     # num_workers = os.cpu_count()
-    with MP.Pool(MP.cpu_count()) as pool:
+
+    with MultiProcess.Pool(MultiProcess.cpu_count()) as pool:
         task = pool.apply_async(pdread_sap, args=(latest_sap_file[1],))
         async_results.append(task)
         task = pool.apply_async(pdread_c1, args=(DATA_C1,))
@@ -1409,7 +1408,7 @@ def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_in
 
 
-def start_parellel(date3y_in=None, date3y_in_tt=None):
+def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
     global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb
 
     # load = False
@@ -1563,12 +1562,13 @@ def start_parellel(date3y_in=None, date3y_in_tt=None):
     reptxt = f"Отчет сформирован в файле: '{str(Path(repfile).resolve())}'"
     print(reptxt)
 
-    try:
-        # date_lab.config(text="Выполнено!")
-        start_button.config(state="normal")
-        start_button.config(text=reptxt)
-    except NameError:
-        print("date_lab, start_button is not defined.")
+    return reptxt
+    # try:
+    #     # date_lab.config(text="Выполнено!")
+    #     start_button.config(state="normal")
+    #     start_button.config(text=reptxt)
+    # except NameError:
+    #     print("date_lab, start_button is not defined.")
 
 
 def print_all_widget_paths(parent, depth=0):
@@ -1728,9 +1728,31 @@ def interface():
 
         gl_root.update()
 
-        start_parellel(
-            date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
-        )
+        # start_parellel(
+        #     date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
+        # )
+
+        def afterrun(res: str):
+            start_button.config(state="normal")
+            start_button.config(text=res)
+
+        def run():
+
+            res = start_parellel(
+                date3y_in=date_year.get_date(), date3y_in_tt=date_3y_tt.get_date()
+            )
+
+            # Включаем кнопку обратно через after() — безопасно для Tkinter
+            gl_root.after(0, afterrun, res)
+
+            # try:
+            #     # date_lab.config(text="Выполнено!")
+            #     # start_button.config(state="normal")
+            #     # start_button.config(text=reptxt)
+            # except NameError:
+            #     print("date_lab, start_button is not defined.")
+
+        Thread(target=run, daemon=True).start()
 
     # подстройка имен месяцев локали. без подстройки имя месяца выводится в родительном падеже
     locale = Locale("ru_RU")
@@ -1793,7 +1815,7 @@ def interface():
     tab1.grid_columnconfigure(index=4, weight=1)
     tab1.grid_columnconfigure(index=5, minsize=40)
 
-    for ii in range(0, 6):
+    for ii in range(6):
         tab3.grid_rowconfigure(index=ii, weight=1)
         tab3.grid_columnconfigure(index=ii, weight=1)
 
@@ -1860,7 +1882,7 @@ def interface():
     tk.Label(tab1, text="Дата среза для полных 3х леток->").grid(
         column=3, row=0, padx=0, pady=0, sticky="e"
     )
-    dates = date(datetime.now().year - 3, 12, 31)
+    dates = date(datetime.now(tz=UTC).year - 3, 12, 31)
     date_year.set_date(dates)
 
     # дата точных 3х леток
@@ -1872,7 +1894,9 @@ def interface():
         fg="white",
         width=30,
     )
-    dates = date(datetime.now().year - 3, datetime.now().month, 1) - timedelta(days=1)
+    dates = date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1) - timedelta(
+        days=1
+    )
     date_3y_tt.set_date(dates)
 
     date_3y_tt.grid(column=4, row=1, sticky=tk.EW, padx=10, columnspan=2)
@@ -1940,12 +1964,13 @@ def interface():
     loadconf(gl_root)
 
     # программный автозапуск
-    start_button.invoke()
+    # start_button.invoke()
 
     gl_root.mainloop()
 
 
 if __name__ == "__main__":
+    MultiProcess.freeze_support()
     try:
         from mp import gl_factfile as gl_factfile_mp  # type: ignore
         from mp import gl_settings as gl_settings_mp  # type: ignore
@@ -1956,7 +1981,6 @@ if __name__ == "__main__":
     except ModuleNotFoundError:
         print("Не найден mp.py")
 
-    MP.freeze_support()
     print(
         "================================================================Запуск скрипта===="
     )
