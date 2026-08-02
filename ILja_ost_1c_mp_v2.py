@@ -1111,6 +1111,7 @@ def report(
     workbook = gl_writer.book
     wssumm = workbook.add_worksheet("Суммы")
     wsfilter = workbook.add_worksheet("filter")
+    wsfilter_col = workbook.add_worksheet("filter_col")
     wsbase = workbook.add_worksheet("base")
 
     # записать в excel имеющиеся колонок
@@ -1187,12 +1188,6 @@ def report(
         "ОИТ",
     ]
 
-    # выборка складов МОЛ "Склад / Контрагент / Работник"
-    # mol_1c = [
-    #     "МОЛ ЦАП",
-    #     "МОЛ ЦАП УМАИТ",
-    #     "Оргтехника офис",
-    # ]
     # выборка по фильтрам
     dfl_s = dfl_s[
         dfl_s["Наименование подразделения"].isin(podr_sap)
@@ -1203,6 +1198,21 @@ def report(
     # записать в excel выборку колонок
     # dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
     save_ws(dfl_s, wsfilter, add_filter=True)
+
+    # записать выборку строк с разным конечным количеством
+    # сбросить склады МОЛ т.к. их нет на ЦС
+    # выборка складов МОЛ "Склад / Контрагент / Работник"
+    mol_1c = [
+        "МОЛ ЦАП",
+        "МОЛ ЦАП УМАИТ",
+        "Оргтехника офис",
+    ]
+    df_warn = dfl_s[
+        (dfl_s["Конечный остаток_Количество"] != dfl_s["Количество"])
+        & (~dfl_s["Склад / Контрагент / Работник"].isin(mol_1c))
+    ]
+    save_ws(df_warn, wsfilter_col, add_filter=True)
+    df_warn = None
 
     # сборка датакласса для передачи
 
@@ -1345,7 +1355,14 @@ def monkey_path2():
 
 
 def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
+    """Преобразование считанного кэша ВП для загрузки
 
+    Args:
+        df_in (pd.DataFrame): Входящий фрейм
+
+    Returns:
+        pd.DataFrame: Выходящий фрейм
+    """
     # добавить склад для позиций в закупке
     df_in["Склад / Контрагент / Работник"] = "В закупке"
 
