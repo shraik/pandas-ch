@@ -1081,12 +1081,32 @@ def combined(db_l: Datcls):
         .reset_index()
         .drop(columns="index")
     )
+
+    res_long2 = (
+        pd.wide_to_long(
+            res2,
+            i=["index"],
+            j="values",
+            stubnames=["м"],
+            sep="_",
+            suffix=r"\d{4}_\d{2}_шт",
+        )
+        .dropna(subset="м")
+        .reset_index()
+        .drop(columns="index")
+    )
+
     res_long = res_long[
         cols_to_move_l + [x for x in res_long.columns if x not in cols_to_move_l]
     ]
 
+    res_long2 = res_long2[
+        cols_to_move_l + [x for x in res_long2.columns if x not in cols_to_move_l]
+    ]
+
     res.to_excel(gl_writer, sheet_name="Объединение", index=False)
     res_long.to_excel(gl_writer, sheet_name="Объединение_L", index=False)
+    res_long2.to_excel(gl_writer, sheet_name="Объединение_L2", index=False)
 
     return 0
 
