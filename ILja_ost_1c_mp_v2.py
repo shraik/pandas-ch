@@ -899,11 +899,10 @@ def mfunc1(inpt: pd.Series, l_today) -> pd.Series:
         # если разовое распределение, то всё кол-во откидываем на след месяц
         if inpt.get("spv") == "разовое":
             cum = raspr
-            dsp = "м_" + (mnth_shift + pd.offsets.DateOffset(months=mon + 1)).strftime(
-                "%Y_%m"
-            )
-            inpt[dsp] = cum * inpt["УчетнЦена"]
-            inpt[dsp + "_шт"] = cum
+            dsp = (mnth_shift + pd.offsets.DateOffset(months=mon + 1)).strftime("%Y_%m")
+            inpt["м_" + dsp] = cum * inpt["УчетнЦена"]
+            # inpt[dsp + "_шт"] = cum
+            inpt["шт_" + dsp] = cum
 
         else:
             while raspr > 0:
@@ -911,11 +910,10 @@ def mfunc1(inpt: pd.Series, l_today) -> pd.Series:
                     cum = ceil(raspr / (m1 - mon))
                 else:
                     cum = raspr
-                dsp = "м_" + (mnth_shift + pd.offsets.DateOffset(months=mon)).strftime(
-                    "%Y_%m"
-                )
-                inpt[dsp] = cum * inpt["УчетнЦена"]
-                inpt[dsp + "_шт"] = cum
+                dsp = (mnth_shift + pd.offsets.DateOffset(months=mon)).strftime("%Y_%m")
+                inpt["м_" + dsp] = cum * inpt["УчетнЦена"]
+                inpt["шт_" + dsp] = cum
+                # inpt[dsp + "_шт"] = cum
 
                 raspr -= cum
                 mon += 1
@@ -1063,7 +1061,9 @@ def combined(db_l: Datcls):
 
     cols_to_move_l = res.columns.tolist()
     ll_today = pd.to_datetime("today")
+    res.reset_index(drop=True, inplace=True)
     res = res.apply(mfunc1, args=(ll_today,), axis=1)
+
     res = res[cols_to_move_l + [x for x in res.columns if x not in cols_to_move_l]]
 
     # преобразование wide to long
@@ -1073,40 +1073,22 @@ def combined(db_l: Datcls):
             res2,
             i=["index"],
             j="values",
-            stubnames=["м"],
+            # stubnames=["м"],
+            stubnames=["м", "шт"],
             sep="_",
             suffix=r"\d{4}_\d{2}(?:_шт)?",
         )
         .dropna(subset="м")
         .reset_index()
         .drop(columns="index")
-    )
-
-    res_long2 = (
-        pd.wide_to_long(
-            res2,
-            i=["index"],
-            j="values",
-            stubnames=["м"],
-            sep="_",
-            suffix=r"\d{4}_\d{2}_шт",
-        )
-        .dropna(subset="м")
-        .reset_index()
-        .drop(columns="index")
-    )
+    ).rename(columns={"м": "руб", "values": "дата_списания"})
 
     res_long = res_long[
         cols_to_move_l + [x for x in res_long.columns if x not in cols_to_move_l]
     ]
 
-    res_long2 = res_long2[
-        cols_to_move_l + [x for x in res_long2.columns if x not in cols_to_move_l]
-    ]
-
-    res.to_excel(gl_writer, sheet_name="Объединение", index=False)
-    res_long.to_excel(gl_writer, sheet_name="Объединение_L", index=False)
-    res_long2.to_excel(gl_writer, sheet_name="Объединение_L2", index=False)
+    res.to_excel(gl_writer, sheet_name="Объединение", index=True)
+    res_long.to_excel(gl_writer, sheet_name="Объединение_L", index=True)
 
     return 0
 
