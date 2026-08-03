@@ -1097,6 +1097,8 @@ def report(
     toch=False,
     client: ch_driver.Client | None = None,
     tablename="c1_ost_filter",
+    date3y_in=None,
+    date3y_in_tt=None,
 ):
     """Формирование выходного отчета. Запись промежуточной таблицы в Clickhouse
 
@@ -1269,7 +1271,7 @@ def report(
         f"Дата прихода и конечный остаток центральных складов из файла: {files[0]}",
         f"Начальный остаток центральных складов из файла: {files[2]}",
         "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой '2020-01-01'",
-        f"Всё что пришло {date(datetime.now(UTC).year - 3, 12, 31).strftime('%d.%m.%Y')} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1) - timedelta(days=1)}",
+        f"Всё что пришло {date3y_in} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date3y_in_tt}",
     )
 
     wssumm.write_column(0, 0, listmessage)
@@ -1562,7 +1564,13 @@ def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
     # sys.exit()
 
     report(
-        c2_df, files=gotfiles, toch=True, client=gl_client, tablename="c1_ost_filter"
+        c2_df,
+        files=gotfiles,
+        toch=True,
+        client=gl_client,
+        tablename="c1_ost_filter",
+        date3y_in=date3y_in,
+        date3y_in_tt=date3y_in_tt,
     )
     timer("Формирование выборки", startTime)
 
@@ -1623,8 +1631,8 @@ def loadconf(root_tk: tk.Tk):
             except KeyError:
                 pass
 
-        print("1414 print_all_widget_paths")
-        print_all_widget_paths(root_tk)
+        # print("1414 print_all_widget_paths")
+        # print_all_widget_paths(root_tk)
 
     else:
         # записываем в конфиг-файл значения по умолчанию
@@ -1851,7 +1859,7 @@ def interface():
     # text_factf.insert("1.0", factf_folder)
     button_factf = tk.Button(
         tab3,
-        text="Выбрать каталог с \nфайлами факта поставки",
+        text="Выбрать каталог с \nфайлами факта поставки \n(берет из настроек)",
         command=lambda: open_file_d(5, text_factf),
     )
     button_factf.grid(column=5, row=1, sticky=tk.NSEW, padx=10)
