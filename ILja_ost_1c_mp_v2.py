@@ -1083,6 +1083,14 @@ def combined(db_l: Datcls):
         .drop(columns="index")
     ).rename(columns={"м": "руб", "values": "дата_списания"})
 
+    res_long[["Year", "Month"]] = res_long["дата_списания"].str.split(
+        "_", n=1, expand=True
+    )
+
+    res_long["ДД_списания"] = pd.to_datetime(
+        {"year": res_long.Year, "month": res_long.Month, "day": 1}
+    )
+
     res_long = res_long[
         cols_to_move_l + [x for x in res_long.columns if x not in cols_to_move_l]
     ]
