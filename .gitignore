@@ -21,8 +21,7 @@ act.ini
 *.parquet
 *.spec
 *.exe
-ILja_ost_1c_mp_v2.py
+*.ini
 tk_multi2.py
 tk_multi.py
-ILja_ost_1c_mp_v2.ini
 mp.py

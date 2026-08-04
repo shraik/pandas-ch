@@ -931,6 +931,7 @@ def combined(db_l: Datcls):
         _type_: _description_
     """
 
+    # выборка колонок из входящего фрейма
     goodlist = [
         "Счет",
         "Номенклатура / ОС",
@@ -944,6 +945,7 @@ def combined(db_l: Datcls):
         "Вид деят 1с",
         "Наименование подразделения",
         "Наименование категории запаса",
+        "Класс",
         "Версия2",
     ]
     # print(db_l.c1_filter.dtypes)
@@ -1041,6 +1043,11 @@ def combined(db_l: Datcls):
         axis="columns",
     )
 
+    # заполнить пустые значения
+    res.loc[res["НаимКатегорииЗапаса"].isna(), "НаимКатегорииЗапаса"] = (
+        "Запасы под потребность текущего периода"
+    )
+
     # упорядочивание колонок слева
     lcl = [
         "НомЗаяв",
@@ -1050,10 +1057,6 @@ def combined(db_l: Datcls):
         "НаимКатегорииЗапаса",
         "Вид деят 1с",
     ]
-    # заполнить пустые значения
-    res.loc[res["НаимКатегорииЗапаса"].isna(), "НаимКатегорииЗапаса"] = (
-        "Запасы под потребность текущего периода"
-    )
     columns = [x for x in res.columns if x not in lcl]
     res = res[lcl + columns]
 
@@ -1097,9 +1100,22 @@ def combined(db_l: Datcls):
         )
         # .fillna("макс")
     )
-
     # df_l["стратегия_вовл"].fillna("макс", inplace=True)
     res["стратегия_вовл"] = res["стратегия_вовл"].fillna("макс")
+
+    # слияние класс - уровень
+    res = pd.merge(
+        left=res,
+        right=gl_df_cmtr[["class", "level"]],
+        left_on="Класс",
+        right_on="class",
+        how="left",
+    ).drop("class", axis="columns")  # сбросить лишнюю колонку после слияния
+    # преобразование уровня
+    res["level"] = res["level"].astype("str")
+    condition = (res["level"] == "1") | (res["level"] == "2")
+    res["level"] = res["level"].mask(condition, "Р-21")
+    res["level"] = res["level"].where(condition, "Прочие")
 
     # преобразование wide to long
     res2 = res.reset_index()
@@ -1473,7 +1489,14 @@ def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
 
 
 def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
-    global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb
+    global \
+        gl_writer, \
+        gl_client, \
+        gl_settings, \
+        gl_filters, \
+        gl_filtersdf, \
+        gl_dfb, \
+        gl_df_cmtr
 
     # load = False
     load = True
@@ -1515,6 +1538,17 @@ def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
             loadlist, dagmode=False, defcolstoload=False
         )
         monkey_path2()
+
+        # загрузка справочника классов МТР
+        # TODO переделать на parquet
+        my_db = Path(Path(gl_settings["классификатор"]).parent, "classmtr.pkl")
+        # my_db = Path(r"R:\source\python\Python-xls\data\настройки", "classmtr.pkl")
+
+        if my_db.is_file():
+            gl_df_cmtr = pd.read_pickle(my_db)
+        else:
+            print(f"Нет базы данных классов МТР= {my_db}")
+            sys.exit(-1)
 
         # формирование списка заявок для построения плана поставки
         # Загрузка кэша ВП заявок с полем "срок"
