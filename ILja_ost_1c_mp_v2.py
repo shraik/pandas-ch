@@ -1028,6 +1028,19 @@ def combined(db_l: Datcls):
     res["ДатОстатка"] = res["ДатОстатка"].ffill()
     res["УчетнЦена"] = res["Сумма (без НДС)"] / res["Количество"]
 
+    # добавление колонки с бюджетом
+
+    # добавление к остаткам на складе информации по планированию
+    res = res.merge(
+        gl_filtersdf[["sap", "bgt", "otdel", "vidtmc", "spv"]],
+        how="left",
+        left_on="НомЗаяв",
+        right_on="sap",
+    ).drop(
+        labels="sap",
+        axis="columns",
+    )
+
     # упорядочивание колонок слева
     lcl = [
         "НомЗаяв",
