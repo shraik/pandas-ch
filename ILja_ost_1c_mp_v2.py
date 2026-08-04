@@ -1032,7 +1032,7 @@ def combined(db_l: Datcls):
 
     # добавление к остаткам на складе информации по планированию
     res = res.merge(
-        gl_filtersdf[["sap", "bgt", "otdel", "vidtmc", "spv"]],
+        gl_filtersdf[["sap", "bgt", "otdel", "vidtmc", "spv", "базис"]],
         how="left",
         left_on="НомЗаяв",
         right_on="sap",
@@ -1076,8 +1076,30 @@ def combined(db_l: Datcls):
     ll_today = pd.to_datetime("today")
     res.reset_index(drop=True, inplace=True)
     res = res.apply(mfunc1, args=(ll_today,), axis=1)
-
     res = res[cols_to_move_l + [x for x in res.columns if x not in cols_to_move_l]]
+
+    # добавка Алексея ---
+    res["стратегия_вовл"] = res["Склад"]
+    res["стратегия_вовл"] = (
+        res["стратегия_вовл"].map(
+            {
+                "МОЛ ОТ": "мин",
+                "МОЛ ЦАП УМАИТ": "мин",
+                "ЦАП связь аварийный": "мин",
+                "Оргтехника офис": "мин",
+                "МОЛ ЦАП ИТ": "мин",
+                "МОЛ ЦАП": "мин",
+                "ПлощадкаЦПС БСкл": "сред",
+                "К-219 БазовыйСкл": "сред",
+                "К-10 Базовый скл": "сред",
+                "Офис ПередНаУИС": "сред",
+            }
+        )
+        # .fillna("макс")
+    )
+
+    # df_l["стратегия_вовл"].fillna("макс", inplace=True)
+    res["стратегия_вовл"] = res["стратегия_вовл"].fillna("макс")
 
     # преобразование wide to long
     res2 = res.reset_index()
@@ -1199,6 +1221,7 @@ def report(
         "ТТ Изм 3х леток",
         "Дата_3года_точная",
         "Дата_3года_полная",
+        "Класс",
     ]
     dfl_s = dfl[goodlist]
 
