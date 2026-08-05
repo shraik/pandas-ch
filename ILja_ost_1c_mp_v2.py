@@ -1998,9 +1998,11 @@ def interface():
         fg="white",
         width=30,
     )
-    dates = date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1) - timedelta(
-        days=1
-    )
+    # dates = date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1) - timedelta(
+    #     days=1
+    # )
+    dates = date(datetime.now(tz=UTC).year - 4, 12, 31)
+
     date_3y_tt.set_date(dates)
 
     date_3y_tt.grid(column=4, row=1, sticky=tk.EW, padx=10, columnspan=2)
