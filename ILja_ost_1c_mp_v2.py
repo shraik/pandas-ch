@@ -1134,6 +1134,10 @@ def combined(db_l: Datcls):
         .drop(columns="index")
     ).rename(columns={"м": "руб", "values": "дата_списания"})
 
+    # сделать колонку тыс руб с ндс
+    # res_long["труб_сндс"] = res_long["руб"] / 1000 * 1, 22
+    res_long["труб_сндс"] = res_long["руб"] * 0.00122
+
     res_long[["Year", "Month"]] = res_long["дата_списания"].str.split(
         "_", n=1, expand=True
     )
