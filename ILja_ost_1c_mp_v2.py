@@ -1545,11 +1545,12 @@ def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
 
         # загрузка справочника классов МТР
         # TODO переделать на parquet
-        my_db = Path(Path(gl_settings["классификатор"]).parent, "classmtr.pkl")
+        # my_db = Path(Path(gl_settings["классификатор"]).parent, "classmtr.pkl")
+        my_db = Path(Path(gl_settings["классификатор"]).parent, "classmtr.parquet")
         # my_db = Path(r"R:\source\python\Python-xls\data\настройки", "classmtr.pkl")
 
         if my_db.is_file():
-            gl_df_cmtr = pd.read_pickle(my_db)
+            gl_df_cmtr = pd.read_parquet(my_db)
         else:
             print(f"Нет базы данных классов МТР= {my_db}")
             sys.exit(-1)
