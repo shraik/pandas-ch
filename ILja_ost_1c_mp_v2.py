@@ -1156,14 +1156,63 @@ def combined(db_l: Datcls):
     return 0
 
 
+def oldway(df_loc: pd.DataFrame, shname: Worksheet, olddate: datetime.date):
+    """Вывод карты устаревания
+
+    Args:
+        df_loc (pd.DataFrame): Входящий фрейм с данными
+        shname (Worksheet): лист для вывода
+        olddate (datetime.date): Дата среза
+    """
+    # всё пришедшее ранее 3х лет приравнимаем к 3 годам
+    select_cols = [
+        "Наименование подразделения",
+        "Вид деят 1с",
+        "Склад / Контрагент / Работник",
+        "Наименование категории запаса",
+        "Конечный остаток_Сумма (без НДС)",
+        "ДатаПервПост",
+    ]
+    df_oldway = df_loc[df_loc["Конечный остаток_Сумма (без НДС)"] > 0][
+        select_cols
+    ].copy()
+    dtm = pd.to_datetime(olddate)
+    mask = df_oldway["ДатаПервПост"] <= dtm
+    df_oldway.loc[mask, "ДатаПервПост"] = dtm
+
+    df_oldway["ДатаПервПост"] = df_oldway["ДатаПервПост"].dt.strftime("%Y-%m")
+    pivot_ind = [
+        "Наименование подразделения",
+        "Вид деят 1с",
+        "Склад / Контрагент / Работник",
+        "Наименование категории запаса",
+    ]
+    df_fsv = pd.pivot_table(
+        df_oldway,
+        index=pivot_ind,
+        columns="ДатаПервПост",
+        values="Конечный остаток_Сумма (без НДС)",
+        aggfunc="sum",
+    ).reset_index()
+
+    df_fsv.to_excel(
+        gl_writer,
+        sheet_name="Карта_устаревания",
+        index=False,
+    )
+    rows, cols = df_fsv.shape
+    shname.autofilter(0, 0, rows, cols - 1)
+    shname.autofit()
+
+
 def report(
     dfl: pd.DataFrame,
     files: tuple,
+    date3y_in: datetime.date,
+    date3y_in_tt: datetime.date,
     toch=False,
     client: ch_driver.Client | None = None,
     tablename="c1_ost_filter",
-    date3y_in=None,
-    date3y_in_tt=None,
 ):
     """Формирование выходного отчета. Запись промежуточной таблицы в Clickhouse
 
@@ -1180,6 +1229,7 @@ def report(
     wsfilter = workbook.add_worksheet("filter")
     wsfilter_col = workbook.add_worksheet("filter_col")
     wsbase = workbook.add_worksheet("base")
+    oldway_sht = workbook.add_worksheet("Карта_устаревания")
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
@@ -1286,6 +1336,9 @@ def report(
 
     Gl_db = Datcls(name="databases", vp=gl_dfb, c1_filter=dfl_s)
     combined(Gl_db)
+
+    # --Вывод карты устаревания
+    oldway(dfl_s, oldway_sht, date3y_in_tt)
 
     if toch and client is not None:
         intoclickhouse(
@@ -1492,7 +1545,7 @@ def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_in
 
 
-def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
+def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str:
     global \
         gl_writer, \
         gl_client, \
