@@ -746,11 +746,12 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         )
 
         # форматирование листов расшифровок отключено
-        # wsl = gl_writer.book.get_worksheet_by_name(sheetname)  # type: ignore
-        # wsl.set_column(3, 4, 18, gl_format1)  # type: ignore
-        # wsl.autofit()  # type: ignore
+        # wsl = gl_writer.book.get_worksheet_by_name(sheetname)
+        # wsl.set_column(3, 4, 18, gl_format1)
+        # wsl.autofit()
 
-        table.at[row.Index, param["pivot_ind"][0]] = (
+        # table.at[row.Index, param["pivot_ind"][0]] = (
+        table.at[row[0], param["pivot_ind"][0]] = (
             "=HYPERLINK(\"#'"
             + sheetname
             + '\'!A1", "'
@@ -1142,9 +1143,12 @@ def combined(db_l: Datcls):
         "_", n=1, expand=True
     )
 
+    # res_long["ДД_списания"] = pd.to_datetime(
+    #     {"year": res_long.Year, "month": res_long.Month, "day": 1}
+    # )
     res_long["ДД_списания"] = pd.to_datetime(
         {"year": res_long.Year, "month": res_long.Month, "day": 1}
-    )
+    )  # ty: ignore[no-matching-overload]
 
     res_long = res_long[
         cols_to_move_l + [x for x in res_long.columns if x not in cols_to_move_l]
@@ -1156,7 +1160,7 @@ def combined(db_l: Datcls):
     return 0
 
 
-def oldway(df_loc: pd.DataFrame, shname: Worksheet, olddate: datetime.date):
+def oldway(df_loc: pd.DataFrame, shname: Worksheet, olddate: datetime):
     """Вывод карты устаревания
 
     Args:
@@ -1208,8 +1212,8 @@ def oldway(df_loc: pd.DataFrame, shname: Worksheet, olddate: datetime.date):
 def report(
     dfl: pd.DataFrame,
     files: tuple,
-    date3y_in: datetime.date,
-    date3y_in_tt: datetime.date,
+    date3y_in: datetime,
+    date3y_in_tt: datetime,
     toch=False,
     client: ch_driver.Client | None = None,
     tablename="c1_ost_filter",
@@ -1238,7 +1242,7 @@ def report(
     # оптимизированный вывод
 
     # startTime = timer("==Запись 'base' начата")
-    # save_ws(dfl, wsbase, add_filter=True)  # type: ignore
+    # save_ws(dfl, wsbase, add_filter=True)
     # timer("==Запись завершена", startTime)
 
     # записать возвратный план
@@ -1454,10 +1458,10 @@ def readparallel() -> list:
 def monkey_path2():
     """Исправление путей в настройках для локального запуска"""
 
-    global gl_factfile
     print("Запуск Monkey path")
 
     if "gl_factfile_mp" in globals():
+        global gl_factfile  # ty: ignore[unresolved-global]
         gl_factfile = gl_factfile_mp
         print("Применен Monkey path gl_factfile")
     else:
@@ -1545,6 +1549,7 @@ def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_in
 
 
+<<<<<<< Updated upstream
 def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str:
     global \
         gl_writer, \
@@ -1554,6 +1559,10 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
         gl_filtersdf, \
         gl_dfb, \
         gl_df_cmtr
+=======
+def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
+    global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb, gl_df_cmtr  # ty: ignore[unresolved-global]
+>>>>>>> Stashed changes
 
     # load = False
     load = True
@@ -1695,7 +1704,7 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
     startTime = timer(name="Формирование выборки")
     # формирование выходного файла
     if load:
-        gotfiles = (results[0][1], results[1][1], results[2][1])  # type: ignore
+        gotfiles = (results[0][1], results[1][1], results[2][1])
     else:
         gotfiles = ("Clickhouse_mode1", "Clickhouse_mode2", "Clickhouse_mode3")
     # print(c2_df.dtypes)
@@ -1874,7 +1883,7 @@ def open_file_d(
 
 
 def interface():
-    global gl_root, start_button
+    global gl_root, start_button  # ty: ignore[unresolved-global]
 
     def grad_date():
         # date_lab.config(
@@ -2136,8 +2145,8 @@ def interface():
 if __name__ == "__main__":
     MultiProcess.freeze_support()
     try:
-        from mp import gl_factfile as gl_factfile_mp  # type: ignore
-        from mp import gl_settings as gl_settings_mp  # type: ignore
+        from mp import gl_factfile as gl_factfile_mp
+        from mp import gl_settings as gl_settings_mp
 
         print(
             f"применен monkey patch import\ngl_factfile_mp={gl_factfile_mp}\ngl_settings_mp={gl_settings_mp}"
