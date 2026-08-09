@@ -3,6 +3,9 @@
 # Вариант с использованием библиотеки "multiprocessing" для совместимости с pyinstaller
 
 import configparser
+
+# from datetime import UTC, date, datetime, timedelta
+import datetime
 import multiprocessing as MultiProcess
 
 # from joblib import Parallel, delayed
@@ -11,7 +14,6 @@ import re
 import sys
 import tkinter as tk
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
 from math import ceil
 from pathlib import Path, PureWindowsPath
 from threading import Thread
@@ -208,11 +210,42 @@ def transform(
     sap_ost["key"] = (
         sap_ost["Склад"] + sap_ost["Материал"].astype("string") + sap_ost["Партия"]
     )
+    sap_ost["Признак_ост"] = "Конечный"
+
+    # группировка и заполнение пустых первичных заявок для одинаковых КСМ и партий
+    print("Заполнение номеров первичных заявок для конечных остатков")
+    cvl = sap_ost["НомЗаяв"].count()
+    print("заполненных значений до заливки", cvl)
+    sap_ost[["НомЗаяв", "Позиция"]] = sap_ost.groupby(["Материал", "Партия"])[
+        ["НомЗаяв", "Позиция"]
+    ].ffill()
+    cvl2 = sap_ost["НомЗаяв"].count()
+    print(
+        f"После заливки заполненных значений {cvl2}. Изменение {cvl2 - cvl}",
+    )
+
     sap_ost_ot["key"] = (
         sap_ost_ot["Склад"]
         + sap_ost_ot["Материал"].astype("string")
         + sap_ost_ot["Партия"]
     )
+    sap_ost_ot["Признак_ост"] = "Начальный"
+
+    # группировка и заполнение пустых первичных заявок для одинаковых КСМ и партий
+    print("Заполнение номеров первичных заявок для начальных остатков")
+    cvl = sap_ost_ot["НомЗаяв"].count()
+    print("заполненных значений до заливки", cvl)
+    sap_ost_ot[["НомЗаяв", "Позиция"]] = sap_ost_ot.groupby(["Материал", "Партия"])[
+        ["НомЗаяв", "Позиция"]
+    ].ffill()
+    cvl2 = sap_ost_ot["НомЗаяв"].count()
+    print(
+        f"После заливки заполненных значений {cvl2}. Изменение {cvl2 - cvl}",
+    )
+
+    # print("222 запись sap_ost")
+    # sap_ost.to_excel("sap_ost2.xlsx", engine="xlsxwriter")
+
     # сортировка и сброс дубликатов по партиям
     # sap_ost = sap_ost.sort_values(by="ДатаПервПост", ascending=False).drop_duplicates(
     sap_ost = sap_ost.sort_values(by="ПервДатПр", ascending=False).drop_duplicates(
@@ -227,13 +260,12 @@ def transform(
     # сливаем в один фрейм
     sap_ost_ot = sap_ost_ot[~sap_ost_ot["key"].isin(sap_ost["key"])]
 
-    # sap_ost.to_excel("sap_ost.xlsx", engine="xlsxwriter")
-
     sap_ost = pd.concat([sap_ost, sap_ost_ot], ignore_index=True)
 
     # print("запись временного файла sap_ost")
     # # c1_ost.to_excel("c1_ost.xlsx", index=False)
     # sap_ost.to_excel("sap_ost2.xlsx", engine="xlsxwriter")
+    # sap_ost_ot.to_excel("sap_ost_ot.xlsx", engine="xlsxwriter")
 
     # подготовка таблицы с выгружаемыми запасами к слиянию
     # сортировать по дате и оставлять только первую строку для каждого ключа
@@ -296,7 +328,7 @@ def transform(
     c1_ost.loc[mask, "ДатаПервПост"] = c1_ost["ДатаПервПост_1c"]
     c1_ost["ДатаПервПост"] = c1_ost["ДатаПервПост"].dt.normalize()
     mask = c1_ost["ДатаПервПост"].isna()
-    c1_ost.loc[mask, "ДатаПервПост"] = pd.to_datetime(date(2020, 1, 1))
+    c1_ost.loc[mask, "ДатаПервПост"] = pd.to_datetime(datetime.date(2020, 1, 1))
 
     # преобразовать типы данных
     c1_ost = make_clean(c1_ost)
@@ -368,8 +400,12 @@ def transform(
     if date3y_in_tt is None:
         # вычисляем конец прошлого месяца -3 года
         date3y = pd.to_datetime(
-            date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1)
-            - timedelta(days=1)
+            datetime.date(
+                datetime.datetime.now(datetime.UTC).year - 3,
+                datetime.datetime.now(datetime.UTC).month,
+                1,
+            )
+            - datetime.timedelta(days=1)
         )
     else:
         date3y = pd.to_datetime(date3y_in_tt)
@@ -385,7 +421,9 @@ def transform(
     # добавление 3х леток на конец года
     if date3y_in is None:
         # вычисляем конец прошлого месяца -3 года
-        date3y = pd.to_datetime(date(datetime.now(UTC).year - 3, 12, 31))
+        date3y = pd.to_datetime(
+            datetime.date(datetime.datetime.now(datetime.UTC).year - 3, 12, 31)
+        )
     else:
         date3y = pd.to_datetime(date3y_in)
 
@@ -1061,7 +1099,9 @@ def combined(db_l: Datcls):
     columns = [x for x in res.columns if x not in lcl]
     res = res[lcl + columns]
 
-    edge_date = pd.to_datetime(date(datetime.now(tz=UTC).year, 1, 1))
+    edge_date = pd.to_datetime(
+        datetime.date(datetime.datetime.now(tz=datetime.UTC).year, 1, 1)
+    )
     res["ДатаПервПост_кор"] = res["ДатаПервПост"].where(
         res["ДатаПервПост"] >= edge_date, other=edge_date
     )
@@ -1160,7 +1200,7 @@ def combined(db_l: Datcls):
     return 0
 
 
-def oldway(df_loc: pd.DataFrame, shname: Worksheet, olddate: datetime):
+def oldway(df_loc: pd.DataFrame, shname: Worksheet, olddate: datetime.date):
     """Вывод карты устаревания
 
     Args:
@@ -1212,8 +1252,10 @@ def oldway(df_loc: pd.DataFrame, shname: Worksheet, olddate: datetime):
 def report(
     dfl: pd.DataFrame,
     files: tuple,
-    date3y_in: datetime,
-    date3y_in_tt: datetime,
+    date3y_in: datetime.date,
+    date3y_in_tt: datetime.date,
+    # date3y_in=None,
+    # date3y_in_tt=None,
     toch=False,
     client: ch_driver.Client | None = None,
     tablename="c1_ost_filter",
@@ -1221,10 +1263,12 @@ def report(
     """Формирование выходного отчета. Запись промежуточной таблицы в Clickhouse
 
     Args:
-        pathtofile (str): Путь к файлу для записи
         dfl (pd.DataFrame): датафрейм
+        files (tuple): полный путь к использованным файлам
+        date3y_in (datetime.date): _description_
+        date3y_in_tt (datetime.date): _description_
         toch (bool, optional): Флаг записи в БД. Defaults to False.
-        client (ch_driver.Client, optional): Клиент соединения с БД. Defaults to None.
+        client (ch_driver.Client | None, optional): Клиент соединения с БД. Defaults to None.
         tablename (str, optional): Имя таблицы для записи в БД. Defaults to "c1_ost_filter".
     """
 
@@ -1296,6 +1340,7 @@ def report(
         "Дата_3года_точная",
         "Дата_3года_полная",
         "Класс",
+        "Признак_ост",
     ]
     dfl_s = dfl[goodlist]
 
@@ -1549,20 +1594,8 @@ def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_in
 
 
-<<<<<<< Updated upstream
 def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str:
-    global \
-        gl_writer, \
-        gl_client, \
-        gl_settings, \
-        gl_filters, \
-        gl_filtersdf, \
-        gl_dfb, \
-        gl_df_cmtr
-=======
-def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
     global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb, gl_df_cmtr  # ty: ignore[unresolved-global]
->>>>>>> Stashed changes
 
     # load = False
     load = True
@@ -1712,12 +1745,12 @@ def start_parellel(date3y_in=None, date3y_in_tt=None) -> str:
 
     report(
         c2_df,
+        date3y_in=date3y_in,
+        date3y_in_tt=date3y_in_tt,
         files=gotfiles,
         toch=True,
         client=gl_client,
         tablename="c1_ost_filter",
-        date3y_in=date3y_in,
-        date3y_in_tt=date3y_in_tt,
     )
     timer("Формирование выборки", startTime)
 
@@ -2053,7 +2086,7 @@ def interface():
     tk.Label(tab1, text="Дата среза для полных 3х леток->").grid(
         column=3, row=0, padx=0, pady=0, sticky="e"
     )
-    dates = date(datetime.now(tz=UTC).year - 3, 12, 31)
+    dates = datetime.date(datetime.datetime.now(tz=datetime.UTC).year - 3, 12, 31)
     date_year.set_date(dates)
 
     # дата точных 3х леток
@@ -2068,7 +2101,7 @@ def interface():
     # dates = date(datetime.now(UTC).year - 3, datetime.now(UTC).month, 1) - timedelta(
     #     days=1
     # )
-    dates = date(datetime.now(tz=UTC).year - 4, 12, 31)
+    dates = datetime.date(datetime.datetime.now(tz=datetime.UTC).year - 4, 12, 31)
 
     date_3y_tt.set_date(dates)
 
