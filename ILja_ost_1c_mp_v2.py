@@ -1602,10 +1602,6 @@ def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_in
 
 
-<<<<<<< HEAD
-def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str:
-    global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb, gl_df_cmtr  # ty: ignore[unresolved-global]
-=======
 def monkey_path3():
     """Исправление путей в настройках для локального запуска"""
     global gl_factfile
@@ -1655,7 +1651,6 @@ def monkey_path3():
 def start_parellel(date3y_in: datetime, date3y_in_tt: datetime) -> str:
     global gl_settings, gl_df_cmtr, gl_writer, gl_filters, gl_filtersdf, gl_dfb
     #     gl_client, \
->>>>>>> 1c366ee53dfecda8b5d9ecb912dd3e07198dcb88
 
     # load = False
     load = True
