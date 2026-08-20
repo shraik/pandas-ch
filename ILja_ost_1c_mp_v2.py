@@ -42,12 +42,18 @@ from shared_module import loadsettings3
 
 gl_config = configparser.ConfigParser()
 
-# gl_writer: pd.ExcelWriter
 gl_link_format = None
 gl_format1 = None
 gl_format0 = None
 gl_wrap_format = None
 gl_back_addr = {}
+gl_factfile = r"R:\03. ЗГД_ГИ\07. УМАИТТ\06. Общая\!БП\отчеты вп\факт\помесячно"
+gl_settings = {}
+gl_df_cmtr: pd.DataFrame
+gl_filtersdf: pd.DataFrame
+gl_filters = {}
+gl_writer: pd.ExcelWriter
+gl_dfb: pd.DataFrame
 
 
 @dataclass
@@ -77,7 +83,7 @@ def save_ws(ldf: pd.DataFrame, ws: Worksheet, add_filter=False):
         ws.autofilter(0, 0, rows, cols - 1)
 
 
-def initexcel(pathtofile: str):
+def initexcel(pathtofile: str) -> pd.ExcelWriter:
     """Инициализация excel файла для записи. Настройка стилей.
 
     Args:
@@ -1500,13 +1506,14 @@ def readparallel() -> list:
     return results
 
 
+'''
 def monkey_path2():
     """Исправление путей в настройках для локального запуска"""
 
     print("Запуск Monkey path")
 
     if "gl_factfile_mp" in globals():
-        global gl_factfile  # ty: ignore[unresolved-global]
+        global gl_factfile
         gl_factfile = gl_factfile_mp
         print("Применен Monkey path gl_factfile")
     else:
@@ -1522,6 +1529,7 @@ def monkey_path2():
         print("Применен Monkey path gl_settings")
     else:
         print("Ошибка применения Monkey path gl_settings_mp не найден")
+'''
 
 
 def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
@@ -1594,8 +1602,60 @@ def transform_vp(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_in
 
 
+<<<<<<< HEAD
 def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str:
     global gl_writer, gl_client, gl_settings, gl_filters, gl_filtersdf, gl_dfb, gl_df_cmtr  # ty: ignore[unresolved-global]
+=======
+def monkey_path3():
+    """Исправление путей в настройках для локального запуска"""
+    global gl_factfile
+    print("Запуск Monkey path3")
+    conffile = Path(__file__).resolve().with_suffix(".ini2")
+
+    if conffile.is_file():
+        import configparser
+
+        config = configparser.ConfigParser()
+
+        print(f"Загрузка найденного конфиг-файл {conffile}")
+
+        config.read(conffile)
+        config_dict = {section: dict(config[section]) for section in config.sections()}
+        print("Считанный Monkey path3", config_dict)
+
+        if (
+            "gl_factfile" in globals()
+            and config_dict["default"].get("gl_factfile") is not None
+        ):
+            gl_factfile = config["default"]["gl_factfile"]
+            print("Применен Monkey path gl_factfile")
+        else:
+            print("Ошибка применения Monkey path3 gl_factfile_mp не найден")
+
+        if (
+            "gl_settings" in globals()
+            and config_dict["default"].get("gl_settings") is not None
+        ):
+            nested_dict = eval(config_dict["default"]["gl_settings"])
+            gl_settings["классификатор"] = nested_dict.get(
+                "классификатор", gl_settings["классификатор"]
+            )
+            gl_settings["путь"] = nested_dict.get("путь", gl_settings["путь"])
+            gl_settings["корректировки"] = nested_dict.get(
+                "корректировки", gl_settings["корректировки"]
+            )
+
+            print("Применен Monkey path3 gl_settings")
+        else:
+            print("Ошибка применения Monkey path3 gl_settings не найден")
+    else:
+        print(f"Monkey path3 {conffile} не найден. Пропускаем.")
+
+
+def start_parellel(date3y_in: datetime, date3y_in_tt: datetime) -> str:
+    global gl_settings, gl_df_cmtr, gl_writer, gl_filters, gl_filtersdf, gl_dfb
+    #     gl_client, \
+>>>>>>> 1c366ee53dfecda8b5d9ecb912dd3e07198dcb88
 
     # load = False
     load = True
@@ -1636,7 +1696,7 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
         gl_settings, gl_filters, gl_filtersdf = loadsettings3(
             loadlist, dagmode=False, defcolstoload=False
         )
-        monkey_path2()
+        monkey_path3()
 
         # загрузка справочника классов МТР
         # TODO переделать на parquet
@@ -2177,15 +2237,6 @@ def interface():
 
 if __name__ == "__main__":
     MultiProcess.freeze_support()
-    try:
-        from mp import gl_factfile as gl_factfile_mp
-        from mp import gl_settings as gl_settings_mp
-
-        print(
-            f"применен monkey patch import\ngl_factfile_mp={gl_factfile_mp}\ngl_settings_mp={gl_settings_mp}"
-        )
-    except ModuleNotFoundError:
-        print("Не найден mp.py")
 
     print(
         "================================================================Запуск скрипта===="
