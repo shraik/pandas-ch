@@ -1648,7 +1648,7 @@ def monkey_path3():
         print(f"Monkey path3 {conffile} не найден. Пропускаем.")
 
 
-def start_parellel(date3y_in: datetime, date3y_in_tt: datetime) -> str:
+def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str:
     global gl_settings, gl_df_cmtr, gl_writer, gl_filters, gl_filtersdf, gl_dfb
     #     gl_client, \
 

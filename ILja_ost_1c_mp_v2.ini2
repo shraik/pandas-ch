@@ -1,0 +1,3 @@
+[default]
+gl_factfile = Y:/ilja/source/python/Python-xls/data/факт/помесячно
+gl_settings = {"классификатор": "R:/source/python/Python-xls/data/настройки/Классификатор МТР.XLSX","путь": "R:/source/python/Python-xls/data/загрузка ВП","корректировки": "R:/source/python/Python-xls/data/настройки/корректировки_упр.xlsx"}
