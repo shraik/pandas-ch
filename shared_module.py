@@ -1,19 +1,23 @@
 # pip install sqlalchemy-cratedb==0.42.0.dev2
 
-import pandas as pd
 import sys
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from os import environ as int_env
+from os import scandir, walk
+from os import stat as stat_file
 from pathlib import Path, PureWindowsPath
-from python_calamine import CalamineWorkbook
+from typing import BinaryIO, Literal
 
-from os import walk, environ as int_env, scandir, stat as stat_file
-from sqlalchemy import create_engine, inspect
+import pandas as pd
 
 # from sqlalchemy_cratedb.support import insert_bulk
 import sqlalchemy as sa
+from python_calamine import CalamineWorkbook
+from sqlalchemy import Engine, create_engine, inspect
 
 if dict(int_env).get("AIRFLOW_HOME", None) is not None:
-    from smbclient import open_file, register_session, stat, scandir as scandir_smb  # type: ignore
+    from smbclient import open_file, register_session, stat
+    from smbclient import scandir as scandir_smb
 
 
 gl_factfile = r"Y:\ilja\source\python\Python-xls\data\факт\помесячно"
@@ -30,11 +34,11 @@ def timer(name: str, startTime=None):
         datetime: Время запуска или время прошедшее с полученной даты запуска
     """
     if startTime:
-        elapsedt = datetime.now() - startTime
+        elapsedt = datetime.now(tz=UTC) - startTime
         print(f"Таймер: Прошло времени для [{name}]: {elapsedt}")
         return elapsedt
     else:
-        startTime = datetime.now()
+        startTime = datetime.now(tz=UTC)
         print(f"Таймер: Запущен [{name}] at {startTime}")
         return startTime
 
@@ -98,7 +102,7 @@ def loadsettings3(
                     usecols=colstoload,
                 )
 
-        except IOError as e:
+        except OSError as e:
             print(f"не удалось открыть файл {settfile}")
             print(e)
             sys.exit(0)
@@ -110,13 +114,13 @@ def loadsettings3(
         conf = settings.get("конфиги", [])
         if dagmode is True:
             # res = stat(settfile)
-            dconf = datetime.fromtimestamp(stat(settfile).st_mtime).strftime(
+            dconf = datetime.fromtimestamp(stat(settfile).st_mtime, tz=UTC).strftime(
                 "%Y-%m-%d %H:%M:%S"
             )
         else:
-            dconf = datetime.fromtimestamp(Path(settfile).stat().st_mtime).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            dconf = datetime.fromtimestamp(
+                Path(settfile).stat().st_mtime, tz=UTC
+            ).strftime("%Y-%m-%d %H:%M:%S")
         conf.append(PureWindowsPath(settfile).name + " " + dconf)
         settings.update({"конфиги": conf})
 
@@ -173,7 +177,7 @@ def loadsettings3(
             value = df_cfg[df_cfg["item"] == "версиявп"]["sap"].iloc[0]
             settings.update({"версиявп": value})
             gmonth = int(str(value).split("+")[0])
-            datevp = date(datetime.now().year, gmonth, 1)
+            datevp = date(datetime.now(tz=UTC).year, gmonth, 1)
             # дата для фильтрации = версия возвратного плана 7+6=> 7-1 => 01.06.2023
             datevp = datevp.replace(month=datevp.month, day=1) - timedelta(days=1)
 
@@ -284,7 +288,7 @@ def loadsettings3(
     return settings, filter, filtersdf
 
 
-def initdb(mode="file") -> str:
+def initdb(mode="file") -> Engine:
     if mode == "file":
         eng = create_engine("sqlite:///configs.db")
     return eng
@@ -316,17 +320,19 @@ def check_file_data(engine, modified, ftl) -> bool:
     lst_t = inspector.get_table_names()
     if "config_vp" not in lst_t:
         # если нет таблицы, создать начальный конфиг и записать в БД
-        datetime_object = datetime(2020, 1, 1, 0, 0, 0)
+        datetime_object = datetime(2020, 1, 1, 0, 0, 0)  # noqa: DTZ001
         values = {ftl: datetime_object}
         config_dct = {"config": values}
         conf_df = pd.DataFrame(config_dct)
         conf_df.to_sql("config_vp", engine, if_exists="replace")
     else:
         conf_dict = pd.read_sql_table("config_vp", engine).set_index("index").to_dict()
-        if conf_dict["config"].get(ftl, None) is not None:
-            if conf_dict["config"][ftl] >= modified:
-                # сохранённая дата больше или = дате файла
-                return False
+        if (
+            conf_dict["config"].get(ftl, None) is not None
+            and conf_dict["config"][ftl] >= modified
+        ):
+            # сохранённая дата больше или = дате файла
+            return False
 
     return True
 
@@ -336,7 +342,8 @@ def loadvp3(pathtovp: str) -> bool:
     Конвертация ВП в датафрейм и сохранение в pickle. путь из настроек.
     Если путь это каталог делаем рекурсивный обход и загружаем последний по дате файл.
     возвращает true если загрузка прошла или прерывает выполнение"""
-    global gl_import_df, gl_settings
+    # global gl_import_df, gl_settings
+    global gl_import_df
     engine = initdb()
     vpp = Path(pathtovp)
 
@@ -351,7 +358,7 @@ def loadvp3(pathtovp: str) -> bool:
             # list_of_files = list(Path(vpp).rglob("*.xlsx", case_sensitive=False))
             # list_of_files = list(Path(vpp).rglob("*.xlsx"))
 
-            nfiled = datetime(1970, 1, 1)
+            nfiled = datetime(1970, 1, 1)  # noqa: DTZ001
             file_tl = None
             dropfile = False
             for file_info in scandir(Path(vpp)):
@@ -360,7 +367,7 @@ def loadvp3(pathtovp: str) -> bool:
                     and PureWindowsPath(file_info).suffix.lower() == ".xlsx"
                 ):
                     print(f"Найден файл: {file_info.name}")
-                    modified = datetime.fromtimestamp(file_info.stat().st_mtime)
+                    modified = datetime.fromtimestamp(file_info.stat().st_mtime)  # noqa: DTZ006
                     if modified > nfiled:
                         nfiled = modified
                         file_tl = file_info
@@ -389,7 +396,7 @@ def loadvp3(pathtovp: str) -> bool:
                 print("найден флаг-файл 'drop' файл ВП надо загружать")
             print("файл надо загружать")
 
-            file = open(file_tl, mode="rb")
+            file = open(file_tl, mode="rb")  # noqa: SIM115
             workbook = CalamineWorkbook.from_filelike(file)
             wsname = workbook.sheet_names
             print(f"листы в книге: {file_tl.name}, {wsname}")
@@ -402,11 +409,13 @@ def loadvp3(pathtovp: str) -> bool:
                 for index, ws in enumerate(wsname):
                     if ws.lower() in good_list:
                         print(
-                            f"Старт загрузки файла: {file_tl.name}, лист: {wsname[index]}"
+                            # f"Старт загрузки файла: {file_tl.name}, лист: {wsname[index]}"
+                            f"Старт загрузки файла: {file_tl.name}, лист: {ws}"
                         )
                         gl_import_df = pd.read_excel(
                             file,
-                            sheet_name=wsname[index],
+                            # sheet_name=wsname[index],
+                            sheet_name=ws,
                             engine="calamine",
                         )
                         if cleanvp("", gl_import_df) is True:
@@ -425,7 +434,10 @@ def loadvp3(pathtovp: str) -> bool:
 
 
 def saveframe(
-    frame: pd.DataFrame, tn: str, conn: sa.engine.Connection, modes="replace"
+    frame: pd.DataFrame,
+    tn: str,
+    conn: sa.engine.Connection,
+    modes: Literal["fail", "replace", "append", "delete_rows"] = "replace",
 ) -> int:
     """Cохранить фрейм в БД
 
@@ -529,7 +541,7 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
             # сбросить колонки слева, переименовать по найденной строке,
             # сбросить строки сверху
             lc_import_df = (
-                lc_import_df.drop(lc_import_df.iloc[:, 0:coli], axis="columns")
+                lc_import_df.drop(lc_import_df.iloc[:, 0:coli], axis="columns")  # type: ignore
                 .rename(columns=lc_import_df.iloc[rowi])
                 .loc[rowi + 1 :]
             )
@@ -541,13 +553,12 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
     for index, i in enumerate(clmns.copy()):
         clmns[index] = str.strip(str(clmns[index]))
         clmns[index] = "".join(clmns[index].splitlines())
-        if clmns[index].lower() == "ожидаемый срок поставки":
-            clmns[index] = "СРОК"
-        elif clmns[index].lower() == "срок поставки":
-            clmns[index] = "СРОК"
-        elif clmns[index].lower() == "срок поставки ожид/факт":
-            clmns[index] = "СРОК"
-        elif clmns[index] == "Срок":
+        if (
+            clmns[index].lower() == "ожидаемый срок поставки"
+            or clmns[index].lower() == "срок поставки"
+            or clmns[index].lower() == "срок поставки ожид/факт"
+            or clmns[index] == "Срок"
+        ):
             clmns[index] = "СРОК"
 
     lc_import_df.columns = clmns
@@ -589,10 +600,10 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
     indexes = [i for i, x in enumerate(lc_import_df.columns) if x == "Статус"]
     print(f"Обработка дубликата колонки 'Статус' в столбцах: {indexes}")
     if len(indexes) >= 2:
-        lc_import_df.columns.values[indexes[0]] = "Статус сводной"
+        lc_import_df.columns.values[indexes[0]] = "Статус сводной"  # type: ignore
 
     # выборка колонок по списку
-    lc_import_df = lc_import_df[lc_import_df.columns.intersection(goodcol)]
+    lc_import_df = lc_import_df[lc_import_df.columns.intersection(goodcol)]  # type: ignore
 
     # удаление колонок дубликатов
     lc_import_df = lc_import_df.loc[:, ~lc_import_df.columns.duplicated()].copy()
@@ -684,16 +695,16 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
 
 
 def loadfile(
-    filename: str | bytes,
+    filename: str | BinaryIO,
     clumns: dict,
     sh_name: str,
-    header_row=[],
+    header_row=None,
     ucols=None,
-    nrws=15,
+    nrws: int | None = 15,
 ) -> pd.DataFrame:
     """Считать excel файл по настройкам, вернуть датафрейм"""
 
-    if header_row == []:
+    if header_row is None:
         res = pd.read_excel(filename, nrows=nrws, sheet_name=sh_name, engine="calamine")
 
     else:
@@ -705,13 +716,14 @@ def loadfile(
             engine="calamine",
         )
         # обнуление уровней с пустым значением
-        for nl in range(0, res.columns.nlevels):
+        for nl in range(res.columns.nlevels):
             res = res.rename(columns=lambda x: "" if "Unnamed" in x else x, level=nl)
 
         if len(header_row) > 1:
             # ветка работы с мультиндексом. объединение в строку
             res.columns = [
-                "_".join(filter(None, a)) for a in res.columns.to_flat_index()
+                "_".join(filter(None, a))
+                for a in res.columns.to_flat_index()  # type: ignore
             ]
         lisc = res.columns.to_list()
 
@@ -720,17 +732,17 @@ def loadfile(
         # дикт для переименования найденных колонок
         renmd = {}
 
-        for li in clumns:
-            if isinstance(li, int):
-                resl.append(lisc[li - 1])
-                if clumns[li] != "":
+        for li in clumns.items():
+            if isinstance(li[0], int):
+                resl.append(lisc[li[0] - 1])
+                if clumns[li[0]] != "":
                     # нет проверки выхода за правую границу массива
-                    renmd[lisc[li - 1]] = clumns[li]
+                    renmd[lisc[li[0] - 1]] = clumns[li[0]]
             else:
-                dfit = next((x for x in lisc if x.find(li) > -1), "Not found")
+                dfit = next((x for x in lisc if x.find(li[0]) > -1), "Not found")
                 if dfit != "Not found":
                     resl.append(dfit)
-                    renmd[dfit] = clumns[li]
+                    renmd[dfit] = clumns[li[0]]
                 else:
                     print(f'Ошибка. Не нашел колонку "{li}" в файле: {filename}')
                     sys.exit()
@@ -760,7 +772,7 @@ def get_files(dirs: str, dagmode: bool, dagmode_env: dict, prefix_smb: str) -> l
     if dagmode:
         fulldir = PureWindowsPath(
             prefix_smb + str(dagmode_env["confdir"])
-        ).parent.joinpath("факт\помесячно")
+        ).parent.joinpath(r"факт\помесячно")
 
         register_session(
             dagmode_env["uri_samba"]["_host"],
@@ -768,7 +780,7 @@ def get_files(dirs: str, dagmode: bool, dagmode_env: dict, prefix_smb: str) -> l
             password=dagmode_env["uri_samba"]["password"],
         )
 
-        for file_info in scandir_smb(fulldir):
+        for file_info in scandir_smb(str(fulldir)):
             # print(f"Найден файл: {file_info.path}")
             suffix = PureWindowsPath(file_info.path).suffix.lower()
             if PureWindowsPath(file_info.path).name[0] != "~" and (
@@ -776,7 +788,9 @@ def get_files(dirs: str, dagmode: bool, dagmode_env: dict, prefix_smb: str) -> l
             ):
                 res.append(PureWindowsPath(file_info.path).as_posix())
                 fmd[PureWindowsPath(file_info.path).as_posix()] = (
-                    datetime.fromtimestamp(file_info.smb_info.change_time.timestamp())
+                    datetime.fromtimestamp(
+                        file_info.smb_info.change_time.timestamp(), tz=UTC
+                    )
                 )
     else:
         # сбор файлов c файлового доступа
@@ -787,13 +801,15 @@ def get_files(dirs: str, dagmode: bool, dagmode_env: dict, prefix_smb: str) -> l
                 if lii[0] != "~" and (suffix == ".xlsx" or suffix == ".prqt"):
                     fullpath = PureWindowsPath(li[0]).joinpath(lii).as_posix()
                     res.append(fullpath)
-                    fmd[fullpath] = datetime.fromtimestamp(stat_file(fullpath).st_mtime)
+                    fmd[fullpath] = datetime.fromtimestamp(
+                        stat_file(fullpath).st_mtime, tz=UTC
+                    )
 
     for li in res:
         if PureWindowsPath(li).suffix.lower() == ".xlsx":
             datep = fmd.get(
                 PureWindowsPath(li).with_suffix(".prqt").as_posix(),
-                datetime(1970, 1, 1, 0, 0, 1),
+                datetime(1970, 1, 1, 0, 0, 1, tzinfo=UTC),
             )
             if PureWindowsPath(li).with_suffix(".prqt").as_posix() not in res or (
                 fmd[li] >= datep
@@ -807,7 +823,7 @@ def get_files(dirs: str, dagmode: bool, dagmode_env: dict, prefix_smb: str) -> l
         else:
             datex = fmd.get(
                 PureWindowsPath(li).with_suffix(".xlsx").as_posix(),
-                datetime(1970, 1, 1, 0, 0, 1),
+                datetime(1970, 1, 1, 0, 0, 1, tzinfo=UTC),
                 # datetime(1970, 1, 1, 0, 0, 1, tzinfo=None).replace(tzinfo=None),
             )
             if fmd[li] >= datex:
@@ -1006,9 +1022,9 @@ def set_xl_styles(workbook) -> dict:
 
 def check_df(
     df: pd.DataFrame,
-    check_list=[],
-    soft_rename={},
-    hard_rename={},
+    check_list=None,
+    soft_rename=None,
+    hard_rename=None,
 ) -> pd.DataFrame:
     """Проверка датафрейма на соответствие формату
 
@@ -1023,7 +1039,7 @@ def check_df(
     """
 
     # переименование, ошибки в игнор
-    if len(soft_rename) > 0:
+    if soft_rename is not None and len(soft_rename) > 0:
         df.rename(
             columns=soft_rename,
             inplace=True,
@@ -1031,7 +1047,7 @@ def check_df(
         )
 
     # переименование, ошибки raise
-    if len(hard_rename) > 0:
+    if hard_rename is not None and len(hard_rename) > 0:
         df.rename(
             columns=hard_rename,
             inplace=True,
