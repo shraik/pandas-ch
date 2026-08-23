@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "clickhouse-connect[arrow]>=0.13.0",
+    "clickhouse-connect[arrow,sqlalchemy]>=0.13.0",
     "pandas>=3.0.1",
     "pandera[pandas]>=0.31.1",
     "pyinstaller>=6.21.0",

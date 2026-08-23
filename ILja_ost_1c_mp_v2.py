@@ -696,6 +696,54 @@ def pdread_c1(DATA_C1: str) -> tuple[pd.DataFrame, str]:
     return res
 
 
+def outtable(
+    cur_row_l: int,
+    cur_col_l: int,
+    param_l: dict,
+    table_l: pd.DataFrame,
+    text_str: str,
+    nametable: str,
+) -> int:
+    # вывод таблицы на лист
+
+    wsheet = param_l["writer"].book.get_worksheet_by_name(param_l["страница"])
+    # вывод описания над таблицей
+    wsheet.write_string(
+        cur_row_l,
+        cur_col_l,
+        text_str,
+    )
+
+    cur_row_l += 1
+
+    column_settings = [
+        {
+            "header": column,
+            "total_function": "sum",
+            "format": gl_format0,
+            "header_format": gl_wrap_format,
+        }
+        for column in table_l.columns
+    ]
+
+    wsheet.add_table(
+        cur_row_l,
+        cur_col_l,
+        cur_row_l + len(table_l.index) + 1,
+        cur_col_l + table_l.shape[1] - 1,
+        {
+            "data": table_l.values,
+            "columns": column_settings,
+            "style": "Table Style Medium 9",
+            "name": nametable,
+            "total_row": True,
+        },
+    )
+
+    lastrow = cur_row_l + len(table_l.index) + 2
+    return lastrow
+
+
 def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     """
     Формирование сводной таблицы и вывод в excel файл с расшифровками по уровням.
@@ -747,7 +795,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     table = table.reindex(param["pivot_sum"], axis=1)
     table.reset_index(inplace=True)
 
-    # формирование таблицы итогов
+    # формирование таблицы итогов по отделам
     itogt = pd.pivot_table(
         table,
         values=param["pivot_sum"],
@@ -757,6 +805,19 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     ).reindex(param["pivot_sum"], axis=1)
     itogt.reset_index(inplace=True)
 
+    # формирование сводного фрейма по виду запасов
+    itogt11 = pd.pivot_table(
+        table,
+        values=param["pivot_sum"],
+        index=[
+            "Вид деят 1с",
+            "Наименование категории запаса",
+        ],
+        aggfunc="sum",
+    ).reindex(param["pivot_sum"], axis=1)
+    itogt11.reset_index(inplace=True)
+
+    # формирование сводного фрейма по виду деятельности (мтр/онсс)
     itogt2 = pd.pivot_table(
         table,
         values=param["pivot_sum"],
@@ -845,80 +906,47 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         },
     )
 
-    # вывод таблицы подитога
-    cur_row = cur_row + len(table.index) + 1
+    # вывод таблицы подитога со строкой названия ====
+    # расчет левого верхнего угла для начала вывода + 1пустая строка
+    cur_row = cur_row + len(table.index) + 2 + 1
+    cur_col = param["начколонка"] + table.shape[1] - itogt.shape[1]
 
-    param["writer"].book.get_worksheet_by_name(param["страница"]).write_string(
-        cur_row + 1,
-        cur_col + table.shape[1] - itogt.shape[1],
-        "Итоги по отделам: ",
-    )
-
-    column_settings = [
-        {
-            "header": column,
-            "total_function": "sum",
-            "format": gl_format0,
-            "header_format": gl_wrap_format,
-        }
-        for column in itogt.columns
-    ]
-
-    cur_row += 2
-    # сдвиг левой границы на разницу в ширине таблиц
-    cur_col = cur_col + table.shape[1] - itogt.shape[1]
-
-    worksheet.add_table(
+    cur_row = outtable(
         cur_row,
         cur_col,
-        cur_row + len(itogt.index) + 1,
-        cur_col + itogt.shape[1] - 1,
-        {
-            "data": itogt.values,
-            "columns": column_settings,
-            "style": "Table Style Medium 9",
-            "name": namet + "total",
-            "total_row": True,
-        },
+        param,
+        itogt,
+        "Итоги по отделам: ",
+        "Итоги1",
+    )
+
+    # вывод таблицы подитога11
+    # добавляем пустую строку
+    cur_row += 1
+    cur_col = param["начколонка"] + table.shape[1] - itogt11.shape[1]
+
+    cur_row = outtable(
+        cur_row,
+        cur_col,
+        param,
+        itogt11,
+        "Итоги по виду запаса: ",
+        "Итоги_вз",
     )
 
     # вывод таблицы подитога2
-    cur_row = cur_row + len(itogt.index) + 2
-    cur_col += 1
-
-    param["writer"].book.get_worksheet_by_name(param["страница"]).write_string(
-        cur_row,
-        cur_col,
-        "Итоги по виду деятельности:",
-    )
-
     cur_row += 1
+    cur_col = param["начколонка"] + table.shape[1] - itogt2.shape[1]
 
-    column_settings = [
-        {
-            "header": column,
-            "total_function": "sum",
-            "format": gl_format0,
-            "header_format": gl_wrap_format,
-        }
-        for column in itogt2.columns
-    ]
-
-    worksheet.add_table(
+    cur_row = outtable(
         cur_row,
         cur_col,
-        cur_row + len(itogt2.index) + 1,
-        cur_col + itogt2.shape[1] - 1,
-        {
-            "data": itogt2.values,
-            "columns": column_settings,
-            "style": "Table Style Medium 9",
-            "name": namet + "total2",
-            "total_row": True,
-        },
+        param,
+        itogt2,
+        "Итоги по виду деятельности:",
+        "Итоги_вд",
     )
-
-    return cur_row + len(itogt2.index) + 2
+    return cur_row
 
 
 def mfunc1(inpt: pd.Series, l_today) -> pd.Series:
@@ -1674,46 +1702,44 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
     db_name = "db_pandas"
     gl_client = contc(db_name, hostip=serverip, port=int(serverport))
 
+    sstr = (
+        gl_root.children["notebook"]
+        .children["tab3"]
+        .children["text_conf_list"]
+        .get("1.0", "end-1c")  # ty: ignore[unresolved-attribute]
+    )
+    loadlist = list(eval(sstr))
+
+    gl_settings, gl_filters, gl_filtersdf = loadsettings3(
+        loadlist, dagmode=False, defcolstoload=False
+    )
+    monkey_path3()
+    # загрузка справочника классов МТР
+    my_db = Path(Path(gl_settings["классификатор"]).parent, "classmtr.parquet")
+
+    print("\n===============Чтение из paquet====================")
+    if my_db.is_file():
+        gl_df_cmtr = pd.read_parquet(my_db)
+    else:
+        print(f"Нет базы данных классов МТР= {my_db}")
+        sys.exit(-1)
+
+    # формирование списка заявок для построения плана поставки
+    # Загрузка кэша ВП заявок с полем "срок"
+    patho = Path(gl_settings["путь"], "вп_corr.prqt")
+    if not patho.is_file():
+        print(f"Нет базы данных {patho}, необходимо запустить 'refresh'")
+        sys.exit(0)
+    print(f"Загрузка кэша возвратного плана из {patho.resolve()!s}")
+    gl_dfb = pd.read_parquet(patho)
+    # print(gl_dfb.info())
+    gl_dfb = transform_vp(gl_dfb)
+
     if load:
         startTime = timer(name="Начало чтения входных файлов")
 
         results = readparallel()
         timer("Чтение завершено.", startTime)
-
-        sstr = (
-            gl_root.children["notebook"]
-            .children["tab3"]
-            .children["text_conf_list"]
-            .get("1.0", "end-1c")  # type: ignore
-        )
-        loadlist = list(eval(sstr))
-
-        gl_settings, gl_filters, gl_filtersdf = loadsettings3(
-            loadlist, dagmode=False, defcolstoload=False
-        )
-        monkey_path3()
-
-        # загрузка справочника классов МТР
-        # TODO переделать на parquet
-        # my_db = Path(Path(gl_settings["классификатор"]).parent, "classmtr.pkl")
-        my_db = Path(Path(gl_settings["классификатор"]).parent, "classmtr.parquet")
-        # my_db = Path(r"R:\source\python\Python-xls\data\настройки", "classmtr.pkl")
-
-        if my_db.is_file():
-            gl_df_cmtr = pd.read_parquet(my_db)
-        else:
-            print(f"Нет базы данных классов МТР= {my_db}")
-            sys.exit(-1)
-
-        # формирование списка заявок для построения плана поставки
-        # Загрузка кэша ВП заявок с полем "срок"
-        patho = Path(gl_settings["путь"], "вп_corr.prqt")
-        if not patho.is_file():
-            print(f"Нет базы данных {patho}, необходимо запустить 'refresh'")
-            sys.exit(0)
-        print(f"Загрузка кэша возвратного плана из {patho.resolve()!s}")
-        gl_dfb = pd.read_parquet(patho)
-        # print(gl_dfb.info())
 
         # слияние и поиск строк не найденных в 1С
         c1_ost, lost_warn = transform(
@@ -1723,8 +1749,6 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
             date3y_in=date3y_in,
             date3y_in_tt=date3y_in_tt,
         )
-
-        gl_dfb = transform_vp(gl_dfb)
 
         """
         # ==================для тестирования
