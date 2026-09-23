@@ -339,6 +339,8 @@ def transform(
     # преобразовать типы данных
     c1_ost = make_clean(c1_ost)
 
+    c1_ost["Наименование подразделения_SAP"] = c1_ost["Наименование подразделения"]
+
     # ==================для тестирования
     # print("запись временного файла 298")
     # c1_ost.to_excel("c1_ost.xlsx", engine="xlsxwriter")
@@ -488,6 +490,29 @@ def transform(
         (lost["Наименование подразделения"].isin(podr_sap))
         & (lost["ДатаПервПост"].isna())
     ]
+
+    # print(c1_ost.dtypes)
+
+    c1_ost[
+        [
+            "Конечный остаток_Сумма (без НДС)",
+            "Конечный остаток_в т.ч. сумма доп. расходов",
+        ]
+    ] = (
+        c1_ost[
+            [
+                "Конечный остаток_Сумма (без НДС)",
+                "Конечный остаток_в т.ч. сумма доп. расходов",
+            ]
+        ]
+        .fillna(0.0)
+        .astype("float64")
+    )
+
+    c1_ost["Кон_ост_cумм_без_доп (без НДС)"] = (
+        c1_ost["Конечный остаток_Сумма (без НДС)"]
+        - c1_ost["Конечный остаток_в т.ч. сумма доп. расходов"]
+    )
 
     return c1_ost, lost_warn
 
@@ -1319,9 +1344,9 @@ def report(
     # dfl.to_excel(gl_writer, sheet_name="base", index=False)
     # оптимизированный вывод
 
-    # startTime = timer("==Запись 'base' начата")
-    # save_ws(dfl, wsbase, add_filter=True)
-    # timer("==Запись завершена", startTime)
+    startTime = timer("==Запись 'base' начата")
+    save_ws(dfl, wsbase, add_filter=True)
+    timer("==Запись 'base' начата", startTime)
 
     # записать возвратный план
     ws_vp = workbook.add_worksheet("ВП")

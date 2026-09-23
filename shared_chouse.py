@@ -1,19 +1,20 @@
 # pip install sqlalchemy-cratedb==0.42.0.dev2
 # import pyarrow as pa
+import re
+import sys
+from datetime import datetime, timedelta
+
 import clickhouse_connect
+import pandas as pd
 from clickhouse_connect import driver as ch_driver
 from clickhouse_connect.driver.exceptions import DatabaseError
-import pandas as pd
-import sys
-from datetime import datetime
-import re
 
 # from os import environ as int_env
 # from sqlalchemy import inspect
 
 
 # if dict(int_env).get("AIRFLOW_HOME", None) is not None:
-#     from smbclient import open_file, register_session, stat, scandir as scandir_smb  # type: ignore
+#     from smbclient import open_file, register_session, stat, scandir as scandir_smb
 
 
 # def save_file_data(engine, modified, ftl, gl_dagmode=True) -> bool:
@@ -57,7 +58,7 @@ import re
 #     return True
 
 
-def timer(name: str, startTime=None):
+def timer(name: str, startTime=None) -> datetime | timedelta:
     """_Функция изменения времени выполнения_
 
     Args:
@@ -65,14 +66,14 @@ def timer(name: str, startTime=None):
         startTime (datetime, optional): Время запуска. Defaults to None.
 
     Returns:
-        datetime: Время запуска или время прошедшее с полученной даты запуска
+        (datetime | timedelta): Время запуска или время прошедшее с полученной даты запуска
     """
     if startTime:
-        elapsedt = datetime.now() - startTime
+        elapsedt = datetime.now() - startTime  # noqa: DTZ005
         print(f"Таймер: Прошло времени для [{name}]: {elapsedt}")
         return elapsedt
     else:
-        startTime = datetime.now()
+        startTime = datetime.now()  # noqa: DTZ005
         print(f"Таймер: Запущен [{name}] at {startTime}")
         return startTime
 
@@ -99,16 +100,18 @@ def check_file_data_ch(
     result = client.command(f"EXISTS {table_name}")
 
     if result != 1:
-        datetime_object = datetime(2020, 1, 1, 0, 0, 0)
+        datetime_object = datetime(2020, 1, 1, 0, 0, 0)  # noqa: DTZ001
         save_file_data_ch(client, datetime_object, ftl)
     else:
         conf_dict = (
             client.query_df(f"SELECT * FROM {table_name}").set_index("index").to_dict()
         )
-        if conf_dict["config"].get(ftl, None) is not None:
-            if conf_dict["config"][ftl] >= modified:
-                # сохранённая дата больше или = дате файла
-                return False
+        if (
+            conf_dict["config"].get(ftl, None) is not None
+            and conf_dict["config"][ftl] >= modified
+        ):
+            # сохранённая дата больше или = дате файла
+            return False
 
     return True
 
@@ -445,11 +448,16 @@ def load_mol_сh(
     # дикт для переименования найденных колонок
     renmd = {}
 
-    for li in clumns:
+    for li in clumns.items():
         dfit = next((x for x in lisc if x.find(li) > -1), "Not found")
         if dfit != "Not found":
             resl.append(dfit)
-            renmd[dfit] = clumns[li]
+            # renmd[dfit] = clumns[li]
+            renmd[dfit] = li
+            li2 = clumns[li]
+            li3 = li
+            print("li2,li3 ", li2, li3)
+
         else:
             # print(f'Ошибка. Не нашел колонку "{li}" в списке колонок: {lisc} ')
             print(f'\nОшибка. Не нашел колонку "{li}" в списке колонок')
