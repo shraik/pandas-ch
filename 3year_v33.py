@@ -2,20 +2,21 @@
 # pyinstaller --onefile --noconfirm --hidden-import=numpy.core.multiarray --hidden-import babel.numbers .\3year_v33.py
 # C:/python/upx/upx-5.1.1-win64
 # --onefile
+import configparser
+import os
+import sys
+import tkinter as tk
 from datetime import date, datetime, timedelta
+from importlib.metadata import version
+from math import ceil
 
 # from dateutil.relativedelta import relativedelta
 from pathlib import Path, PureWindowsPath
-import tkinter as tk
-from tkinter import filedialog as fd
-from tkcalendar import DateEntry
-import pandas as pd
-import configparser
-from math import ceil
 from sys import version as pyversion
-from importlib.metadata import version
-import os
-import sys
+from tkinter import filedialog as fd
+
+import pandas as pd
+from tkcalendar import DateEntry
 
 from shared_module import loadsettings3, timer
 

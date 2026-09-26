@@ -374,6 +374,16 @@ def transform(
         "Наименование подразделения",
     ] = "ОИТ"
 
+    # ----чужие подразделение
+    c1_ost.loc[
+        c1_ost["ФИО менеджера"] == "Менеджер ИХАЛ",
+        "Наименование подразделения",
+    ] = "ИХАЛ"
+    c1_ost.loc[
+        c1_ost["ФИО менеджера"] == "Менеджер УПНГиППД",
+        "Наименование подразделения",
+    ] = "УПНГ"
+
     c1_ost["Наименование подразделения"] = (
         c1_ost["Наименование подразделения"]
         .str.strip()
@@ -389,6 +399,17 @@ def transform(
                 "МОЛ ЦАП  ИТ": "ОИТ",
                 "Отдел информационных технологий": "ОИТ",
                 "Оргтехника офис": "ОИТ",
+                # дальше чужие подр
+                "МОЛ ХАЛ": "ИХАЛ",
+                "Испытательная (химико-аналитическая) лаборатория": "ИХАЛ",
+                "Управление подготовки нефти, газа и поддержания пластового давления": "УПНГ",
+                "Мастер ПСН ЦПС ЦППН": "УПНГ",
+                "Мастер МУПН ЦППН": "УПНГ",
+                "Мастер МУПН ТКЛУ": "УПНГ",
+                "Мастер ЦППН Р.Парк": "УПНГ",
+                "Мастер ВУС ЦППН": "УПНГ",
+                "Мастер ПСП ЦППН": "УПНГ",
+                "Механик ЦППН": "УПНГ",
             },
             # na_action="ignore",
         )
@@ -409,8 +430,8 @@ def transform(
         # вычисляем конец прошлого месяца -3 года
         date3y = pd.to_datetime(
             datetime.date(
-                datetime.datetime.now(datetime.UTC).year - 3,
-                datetime.datetime.now(datetime.UTC).month,
+                datetime.datetime.now().year - 3,  # noqa: DTZ005
+                datetime.datetime.now().month,  # noqa: DTZ005
                 1,
             )
             - datetime.timedelta(days=1)
@@ -419,6 +440,7 @@ def transform(
         date3y = pd.to_datetime(date3y_in_tt)
 
     c1_ost["Дата_3года_точная"] = date3y
+    c1_ost["Дата_3года_точная"] = c1_ost["Дата_3года_точная"].dt.date
     c1_ost.loc[
         c1_ost["ДатаПервПост"] <= date3y, "ТТ Конечная сумма более 3х лет (без НДС)"
     ] = c1_ost["Конечный остаток_Сумма (без НДС)"]
@@ -430,12 +452,15 @@ def transform(
     if date3y_in is None:
         # вычисляем конец прошлого месяца -3 года
         date3y = pd.to_datetime(
-            datetime.date(datetime.datetime.now(datetime.UTC).year - 3, 12, 31)
+            datetime.date(datetime.datetime.now(tz=None).year - 3, 12, 31)  # noqa: DTZ005
         )
     else:
         date3y = pd.to_datetime(date3y_in)
 
     c1_ost["Дата_3года_полная"] = date3y
+    # print("==типы данных", c1_ost["Дата_3года_полная"].dtypes)
+    c1_ost["Дата_3года_полная"] = c1_ost["Дата_3года_полная"].dt.date
+
     c1_ost.loc[
         c1_ost["ДатаПервПост"] <= date3y, "Конечная сумма более 3х лет (без НДС)"
     ] = c1_ost["Конечный остаток_Сумма (без НДС)"]
@@ -1335,17 +1360,20 @@ def report(
     wssumm = workbook.add_worksheet("Суммы")
     wsfilter = workbook.add_worksheet("filter")
     wsfilter_col = workbook.add_worksheet("filter_col")
-    wsbase = workbook.add_worksheet("base")
+    # wsbase = workbook.add_worksheet("base")
     oldway_sht = workbook.add_worksheet("Карта_устаревания")
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
     # обычный вывод
-    # dfl.to_excel(gl_writer, sheet_name="base", index=False)
     # оптимизированный вывод
 
     startTime = timer("==Запись 'base' начата")
-    save_ws(dfl, wsbase, add_filter=True)
+    # save_ws(dfl, wsbase, add_filter=True)
+    basefile = "out/base.xlsx"
+    base_writer = initexcel(basefile)
+    dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
+    base_writer.close()
     timer("==Запись 'base' начата", startTime)
 
     # записать возвратный план
@@ -1939,8 +1967,8 @@ def loadconf(root_tk: tk.Tk):
     return 0
 
 
-def saveconf(vn: str, val: str):
-
+def saveconf(vn: str, val: str) -> None:
+    """Записать конфиг"""
     fname = os.path.basename(__file__)
     conffile = PureWindowsPath(fname).with_suffix(".ini")
 
