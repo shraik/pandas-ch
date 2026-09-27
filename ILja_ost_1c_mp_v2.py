@@ -53,6 +53,7 @@ gl_df_cmtr: pd.DataFrame
 gl_filtersdf: pd.DataFrame
 gl_filters = {}
 gl_writer: pd.ExcelWriter
+gl_writer_sgi: pd.ExcelWriter
 gl_dfb: pd.DataFrame
 
 
@@ -106,6 +107,9 @@ def initexcel(pathtofile: str) -> pd.ExcelWriter:
         datetime_format="dd/mm/yyyy",
         # engine_kwargs={"options": {"strings_to_urls": True}},
     )
+    # TODO добавить механизм хранения стилей в зависимости от имени книги
+    # словарь словарей ?
+
     gl_format1 = writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})
     gl_format0 = writer.book.add_format({"num_format": "#,##0;-#,##0;-"})
     gl_wrap_format = writer.book.add_format({"text_wrap": True, "valign": "top"})
@@ -1363,6 +1367,12 @@ def report(
     # wsbase = workbook.add_worksheet("base")
     oldway_sht = workbook.add_worksheet("Карта_устаревания")
 
+    workbook_sgi = gl_writer_sgi.book
+    wssumm_ihal = workbook_sgi.add_worksheet("Суммы_ИХАЛ")
+    wssumm_upng = workbook_sgi.add_worksheet("Суммы_УПНГ")
+    wsfilter_ihal = workbook_sgi.add_worksheet("filter_ИХАЛ")
+    wsfilter_upng = workbook_sgi.add_worksheet("filter_УПНГ")
+
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
     # обычный вывод
@@ -1372,7 +1382,7 @@ def report(
     # save_ws(dfl, wsbase, add_filter=True)
     basefile = "out/base.xlsx"
     base_writer = initexcel(basefile)
-    dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
+    # dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
     base_writer.close()
     timer("==Запись 'base' начата", startTime)
 
@@ -1530,6 +1540,7 @@ def report(
     )
 
     wssumm.write_column(0, 0, listmessage)
+
     # автоподбор ширины колонок
     # вывод таблиц с расшифровками
     toe(dfl_s, params)
@@ -1541,6 +1552,27 @@ def report(
     # расстановка обратных ссылок на листы с расшифровкой
     params["префиксл"] = ["Расх_"]
     hyperlink(params)
+
+    # вывод по СГИ
+    # ихал
+    # корректировка параметров вывода отчета
+    params["страница"] = "Суммы_ИХАЛ"
+    params["writer"] = gl_writer_sgi
+    params["префиксл"] = "Р_Ихал"
+
+    # фильтр по "Наименование подразделения" и выборка по фильтрам
+    podr_sap = [
+        "ИХАЛ",
+    ]
+    dfl_s = dfl[goodlist]
+    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    save_ws(dfl_s, wsfilter_ihal, add_filter=True)
+
+    wssumm_ihal.write_column(0, 0, listmessage)
+    summ(wssumm_ihal, dfl_s, params)
+
+    # упнг
+    wssumm_upng.write_column(0, 0, listmessage)
 
 
 def readparallel() -> list:
@@ -1729,9 +1761,29 @@ def monkey_path3():
         print(f"Monkey path3 {conffile} не найден. Пропускаем.")
 
 
+def summ(worksheet, ldf, lparam) -> int:
+    # автоподбор ширины колонок
+    # вывод таблиц с расшифровками
+    toe(ldf, lparam)
+    worksheet.autofit()
+    worksheet.set_column(0, 0, 14)
+    worksheet.set_column(4, 12, 24)
+
+    # расстановка обратных ссылок на листы с расшифровкой
+    hyperlink(lparam)
+
+    return 0
+
+
 def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str:
-    global gl_settings, gl_df_cmtr, gl_writer, gl_filters, gl_filtersdf, gl_dfb
-    #     gl_client, \
+    global \
+        gl_settings, \
+        gl_df_cmtr, \
+        gl_writer, \
+        gl_writer_sgi, \
+        gl_filters, \
+        gl_filtersdf, \
+        gl_dfb
 
     # load = False
     load = True
@@ -1861,6 +1913,10 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
 
     repfile = "out/report.xlsx"
     gl_writer = initexcel(repfile)
+
+    repfile_sgi = "out/report-SGI.xlsx"
+    gl_writer_sgi = initexcel(repfile_sgi)
+
     if load:
         lost_warn.to_excel(
             gl_writer, sheet_name="lost_warn", index=False, engine="xlsxwriter"
@@ -1892,6 +1948,7 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
 
     if gl_writer is not None:
         gl_writer.close()
+        gl_writer_sgi.close()
 
     print("Завершено.")
     timer("Итого времени выполнения скрипта", Main_startTime)
