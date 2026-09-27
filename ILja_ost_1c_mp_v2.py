@@ -42,10 +42,10 @@ from shared_module import loadsettings3
 
 gl_config = configparser.ConfigParser()
 
-gl_link_format = None
-gl_format1 = None
-gl_format0 = None
-gl_wrap_format = None
+# gl_link_format = None
+# gl_format1 = None
+# gl_format0 = None
+# gl_wrap_format = None
 gl_back_addr = {}
 gl_factfile = r"R:\03. ЗГД_ГИ\07. УМАИТТ\06. Общая\!БП\отчеты вп\факт\помесячно"
 gl_settings = {}
@@ -62,6 +62,10 @@ class Datcls:
     name: str
     vp: pd.DataFrame
     c1_filter: pd.DataFrame
+    styles: dict | None
+
+
+gl_style = Datcls(name="Styles", vp=pd.DataFrame(), c1_filter=pd.DataFrame(), styles={})
 
 
 def save_ws(ldf: pd.DataFrame, ws: Worksheet, add_filter=False):
@@ -84,7 +88,7 @@ def save_ws(ldf: pd.DataFrame, ws: Worksheet, add_filter=False):
         ws.autofilter(0, 0, rows, cols - 1)
 
 
-def initexcel(pathtofile: str) -> pd.ExcelWriter:
+def initexcel(pathtofile: str, ldata: Datcls, writername: str) -> pd.ExcelWriter:
     """Инициализация excel файла для записи. Настройка стилей.
 
     Args:
@@ -93,7 +97,7 @@ def initexcel(pathtofile: str) -> pd.ExcelWriter:
     Returns:
         pd.ExcelWriter: Excel writer.
     """
-    global gl_format0, gl_format1, gl_link_format, gl_wrap_format
+    # global gl_format0, gl_format1, gl_link_format, gl_wrap_format
 
     # проверка и создание выходного каталога
     folder_path = Path(pathtofile).parents[0]
@@ -109,14 +113,21 @@ def initexcel(pathtofile: str) -> pd.ExcelWriter:
     )
     # TODO добавить механизм хранения стилей в зависимости от имени книги
     # словарь словарей ?
+    # ldata.styles = {}
+    ldata.styles[writername] = {}
+    ldata.styles[writername]["gl_format1"] = writer.book.add_format(
+        {"num_format": "#,##0.00;-#,##0.00;-"}
+    )
+    ldata.styles[writername]["gl_format0"] = writer.book.add_format(
+        {"num_format": "#,##0;-#,##0;-"}
+    )
+    ldata.styles[writername]["gl_wrap_format"] = writer.book.add_format(
+        {"text_wrap": True, "valign": "top"}
+    )
 
-    gl_format1 = writer.book.add_format({"num_format": "#,##0.00;-#,##0.00;-"})
-    gl_format0 = writer.book.add_format({"num_format": "#,##0;-#,##0;-"})
-    gl_wrap_format = writer.book.add_format({"text_wrap": True, "valign": "top"})
-
-    gl_link_format = writer.book.get_default_url_format()
-    gl_link_format.set_align("center")
-    gl_link_format.set_bold()
+    ldata.styles[writername]["gl_link_format"] = writer.book.get_default_url_format()
+    ldata.styles[writername]["gl_link_format"].set_align("center")
+    ldata.styles[writername]["gl_link_format"].set_bold()
 
     return writer
 
@@ -770,12 +781,15 @@ def outtable(
 
     cur_row_l += 1
 
+    format0 = gl_style.styles[param_l["writer_name"]]["gl_format0"]
+    wrap_format = gl_style.styles[param_l["writer_name"]]["gl_wrap_format"]
+
     column_settings = [
         {
             "header": column,
             "total_function": "sum",
-            "format": gl_format0,
-            "header_format": gl_wrap_format,
+            "format": format0,
+            "header_format": wrap_format,
         }
         for column in table_l.columns
     ]
@@ -926,19 +940,23 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     # формирование шаблона вывода для колонок, установка итоговой функции суммирования
     # для колонки с ссылками отдельный формат синим и без функции итога
 
+    format0 = gl_style.styles[param["writer_name"]]["gl_format0"]
+    wrap_format = gl_style.styles[param["writer_name"]]["gl_wrap_format"]
+    link_format = gl_style.styles[param["writer_name"]]["gl_link_format"]
+
     column_settings = [
         {
             "header": column,
             "total_function": "sum",
-            "format": gl_format0,
-            "header_format": gl_wrap_format,
+            "format": format0,
+            "header_format": wrap_format,
         }
         if column
         != param.get("linkcol", "--строка которая не попадется в наименованиях--")
         else {
             "header": column,
-            "format": gl_link_format,
-            "header_format": gl_wrap_format,
+            "format": link_format,
+            "header_format": wrap_format,
         }
         for column in table.columns
     ]
@@ -971,7 +989,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         param,
         itogt,
         "Итоги по отделам: ",
-        "Итоги1",
+        "Итоги1" + param["префиксл"],
     )
 
     # вывод таблицы подитога11
@@ -985,7 +1003,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         param,
         itogt11,
         "Итоги по виду запаса: ",
-        "Итоги_вз",
+        "Итоги_вз" + param["префиксл"],
     )
 
     # вывод таблицы подитога2
@@ -998,7 +1016,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         param,
         itogt2,
         "Итоги по виду деятельности:",
-        "Итоги_вд",
+        "Итоги_вд" + param["префиксл"],
     )
     return cur_row
 
@@ -1381,8 +1399,8 @@ def report(
     startTime = timer("==Запись 'base' начата")
     # save_ws(dfl, wsbase, add_filter=True)
     basefile = "out/base.xlsx"
-    base_writer = initexcel(basefile)
-    # dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
+    base_writer = initexcel(basefile, gl_style, "base_writer")
+    dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
     base_writer.close()
     timer("==Запись 'base' начата", startTime)
 
@@ -1480,7 +1498,7 @@ def report(
 
     # сборка датакласса для передачи
 
-    Gl_db = Datcls(name="databases", vp=gl_dfb, c1_filter=dfl_s)
+    Gl_db = Datcls(name="databases", vp=gl_dfb, c1_filter=dfl_s, styles={})
     combined(Gl_db)
 
     # --Вывод карты устаревания
@@ -1522,6 +1540,7 @@ def report(
 
     params = {
         "writer": gl_writer,
+        "writer_name": "gl_writer",
         "страница": "Суммы",
         "начстрока": 6,
         "начколонка": 0,
@@ -1558,12 +1577,11 @@ def report(
     # корректировка параметров вывода отчета
     params["страница"] = "Суммы_ИХАЛ"
     params["writer"] = gl_writer_sgi
+    params["writer_name"] = "gl_writer_sgi"
     params["префиксл"] = "Р_Ихал"
 
     # фильтр по "Наименование подразделения" и выборка по фильтрам
-    podr_sap = [
-        "ИХАЛ",
-    ]
+    podr_sap = ["ИХАЛ"]
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
     save_ws(dfl_s, wsfilter_ihal, add_filter=True)
@@ -1571,8 +1589,19 @@ def report(
     wssumm_ihal.write_column(0, 0, listmessage)
     summ(wssumm_ihal, dfl_s, params)
 
-    # упнг
+    # =========УПНГ
+    # корректировка параметров вывода отчета
+    params["страница"] = "Суммы_УПНГ"
+    params["префиксл"] = "Р_УПНГ"
+
     wssumm_upng.write_column(0, 0, listmessage)
+    podr_sap = ["УПНГ"]
+    dfl_s = dfl[goodlist]
+    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    save_ws(dfl_s, wsfilter_upng, add_filter=True)
+
+    wssumm_upng.write_column(0, 0, listmessage)
+    summ(wssumm_upng, dfl_s, params)
 
 
 def readparallel() -> list:
@@ -1912,10 +1941,10 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
         c2_df.info()
 
     repfile = "out/report.xlsx"
-    gl_writer = initexcel(repfile)
+    gl_writer = initexcel(repfile, gl_style, "gl_writer")
 
     repfile_sgi = "out/report-SGI.xlsx"
-    gl_writer_sgi = initexcel(repfile_sgi)
+    gl_writer_sgi = initexcel(repfile_sgi, gl_style, "gl_writer_sgi")
 
     if load:
         lost_warn.to_excel(
