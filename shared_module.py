@@ -337,8 +337,9 @@ def check_file_data(engine, modified, ftl) -> bool:
     return True
 
 
-def loadvp3(pathtovp: str) -> bool:
+def loadvp3(pathtovp: str, export_path="") -> bool:
     """pathtovp - путь к каталогу или файлу с ВП.
+    export_path - путь для экспорта загруженного ВП в паркет-файл.
     Конвертация ВП в датафрейм и сохранение в pickle. путь из настроек.
     Если путь это каталог делаем рекурсивный обход и загружаем последний по дате файл.
     возвращает true если загрузка прошла или прерывает выполнение"""
@@ -418,7 +419,7 @@ def loadvp3(pathtovp: str) -> bool:
                             sheet_name=ws,
                             engine="calamine",
                         )
-                        if cleanvp("", gl_import_df) is True:
+                        if cleanvp("", gl_import_df, export_path) is True:
                             print("Загрузка ВП завершена, обновляем версию")
                             save_file_data(engine, nfiled, "ДатаВозвратногоПлана")
                         # если сделали одну загрузку выходим из цикла
@@ -496,7 +497,7 @@ def loadframe(tn: str, conn: sa.engine.Connection) -> pd.DataFrame:
     return df2
 
 
-def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
+def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame, export_path="") -> bool:
     """очистка считанного фрейма и сохранение на диске или в БД"""
     # конвертация строки с именами колонок в имена колонок
     # pp = lc_import_df[lc_import_df.iloc[:, 0] == "/ перв"]
@@ -609,8 +610,8 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
     lc_import_df = lc_import_df.loc[:, ~lc_import_df.columns.duplicated()].copy()
 
     # формат колонки в текстовый вид, т.к. в ней есть мусорные даты
-    lc_import_df["Номер лота из отчета по лотам"] = lc_import_df[
-        "Номер лота из отчета по лотам"
+    lc_import_df[["Номер лота из отчета по лотам", "Договор 1С"]] = lc_import_df[
+        ["Номер лота из отчета по лотам", "Договор 1С"]
     ].astype("string")
 
     # формат чисел для конвертации
@@ -669,6 +670,9 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
             pd.to_datetime, errors="coerce", format="%d/%m/%Y"
         )
     )
+    if uri_pg == "" and export_path != "":
+        print("Запись ВП для дальнейшего использования")
+        lc_import_df.to_parquet(export_path)
 
     dfna = lc_import_df[lc_import_df["СРОК"].isna()]
 
@@ -680,6 +684,7 @@ def cleanvp(uri_pg: str, lc_import_df: pd.DataFrame) -> bool:
         dfna.to_pickle("pickle_na")
         lc_import_df.to_pickle("to_pickle")
         print("Выгрузка DF в файлы завершена")
+
     else:
         # timer("Запуск выгрузки DF в pickle", gl_startTime)
         print("Запуск выгрузки DF в SQL")
