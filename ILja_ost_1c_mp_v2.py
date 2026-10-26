@@ -62,7 +62,7 @@ class Datcls:
     name: str
     vp: pd.DataFrame
     c1_filter: pd.DataFrame
-    styles: dict | None
+    styles: dict
 
 
 gl_style = Datcls(name="Styles", vp=pd.DataFrame(), c1_filter=pd.DataFrame(), styles={})
