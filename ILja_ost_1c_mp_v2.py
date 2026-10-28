@@ -525,8 +525,8 @@ def transform(
         # вычисляем конец прошлого месяца -3 года
         date3y = pd.to_datetime(
             datetime.date(
-                datetime.datetime.now().year - 3,  # noqa: DTZ005
-                datetime.datetime.now().month,  # noqa: DTZ005
+                datetime.datetime.now().year - 3,
+                datetime.datetime.now().month,
                 1,
             )
             - datetime.timedelta(days=1)
@@ -1466,8 +1466,10 @@ def report(
     oldway_sht = workbook.add_worksheet("Карта_устаревания")
 
     workbook_sgi = gl_writer_sgi.book
+    wssumm_sgi = workbook_sgi.add_worksheet("Суммы_СГИ")
     wssumm_ihal = workbook_sgi.add_worksheet("Суммы_ИХАЛ")
     wssumm_upng = workbook_sgi.add_worksheet("Суммы_УПНГ")
+    wsfilter_sgi = workbook_sgi.add_worksheet("filter_СГИ")
     wsfilter_ihal = workbook_sgi.add_worksheet("filter_ИХАЛ")
     wsfilter_upng = workbook_sgi.add_worksheet("filter_УПНГ")
 
@@ -1680,8 +1682,34 @@ def report(
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
     save_ws(dfl_s, wsfilter_upng, add_filter=True)
 
-    wssumm_upng.write_column(0, 0, listmessage)
+    # wssumm_upng.write_column(0, 0, listmessage)
     summ(wssumm_upng, dfl_s, params)
+
+    # =========СГИ
+    # корректировка параметров вывода отчета
+    params["страница"] = "Суммы_СГИ"
+    params["префиксл"] = "Р_СГИ"
+
+    wssumm_sgi.write_column(0, 0, listmessage)
+    podr_sap = [
+        "УПНГ",
+        "УДНГ",
+        "Блок Энергетика",
+        "УЭТ",
+        "ОГМ",
+        "ИХАЛ",
+        "ОТ",
+        "ОАСУТП",
+        "ОИТ",
+        "СХПП",
+    ]
+
+    dfl_s = dfl[goodlist]
+    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    save_ws(dfl_s, wsfilter_sgi, add_filter=True)
+
+    # wssumm_upng.write_column(0, 0, listmessage)
+    summ(wssumm_sgi, dfl_s, params)
 
 
 def readparallel() -> list:
