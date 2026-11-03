@@ -1663,7 +1663,7 @@ def report(
     params["префиксл"] = "Р_Ихал"
 
     # фильтр по "Наименование подразделения" и выборка по фильтрам
-    podr_sap = ["ИХАЛ"]
+    podr_sap = ["СГИ_ИХАЛ"]
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
     save_ws(dfl_s, wsfilter_ihal, add_filter=True)
@@ -1677,7 +1677,7 @@ def report(
     params["префиксл"] = "Р_УПНГ"
 
     wssumm_upng.write_column(0, 0, listmessage)
-    podr_sap = ["УПНГ"]
+    podr_sap = ["СГИ_УПНГ"]
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
     save_ws(dfl_s, wsfilter_upng, add_filter=True)
@@ -1692,16 +1692,16 @@ def report(
 
     wssumm_sgi.write_column(0, 0, listmessage)
     podr_sap = [
-        "УПНГ",
-        "УДНГ",
-        "Блок Энергетика",
-        "УЭТ",
-        "ОГМ",
-        "ИХАЛ",
-        "ОТ",
-        "ОАСУТП",
-        "ОИТ",
-        "СХПП",
+        "СГИ_УПНГ",
+        "СГИ_УДНГ",
+        "СГИ_Блок Энергетика",
+        "СГИ_УЭТ",
+        "СГИ_ОГМ",
+        "СГИ_ИХАЛ",
+        "СГИ_ОТ",
+        "СГИ_ОАСУТП",
+        "СГИ_ОИТ",
+        "СГИ_СХПП",
     ]
 
     dfl_s = dfl[goodlist]
