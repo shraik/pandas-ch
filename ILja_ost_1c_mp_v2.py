@@ -327,14 +327,13 @@ def transform(
     # перенос данных из выгружаемых запасов "ДатПервПст" в выгрузку 1с
     # print(c1_ost.dtypes)
     # c1_ost["ДатаПервПост"] = pd.to_datetime(c1_ost["ДатаПервПост"], errors="coerce")
-    c1_ost.rename(
+    c1_ost = c1_ost.rename(
         columns={
             "Характеристика.Документ поступления.Дата": "ДатаПервПост_1c",
             "Документ посутпления - Дата": "ДатаПервПост_1c",
             "Обозначение": "Обознач. склада",
             "Доступное кол-во": "Количество",
         },
-        inplace=True,
         errors="ignore",
     )
 
@@ -375,77 +374,23 @@ def transform(
         "Склад / Контрагент / Работник"
     ]
 
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер УМАИТиТ ОТ", "Наименование подразделения"
-    ] = "СГИ_ОТ"
-
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер УМАИТиТ ОАСУТП",
-        "Наименование подразделения",
-    ] = "СГИ_ОАСУТП"
-
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер УМАИТиТ ОИТ",
-        "Наименование подразделения",
-    ] = "СГИ_ОИТ"
-
-    # ----чужие подразделение
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер ИХАЛ",
-        "Наименование подразделения",
-    ] = "СГИ_ИХАЛ"
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер УПНГиППД",
-        "Наименование подразделения",
-    ] = "СГИ_УПНГ"
-
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == 'Менеджер блока "Энергетика"',
-        "Наименование подразделения",
-    ] = "СГИ_Блок Энергетика"
-
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер ОГМ",
-        "Наименование подразделения",
-    ] = "СГИ_ОГМ"
-
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер УДНГ",
-        "Наименование подразделения",
-    ] = "СГИ_УДНГ"
-
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер УЭТ",
-        "Наименование подразделения",
-    ] = "СГИ_УЭТ"
-
-    c1_ost.loc[
-        c1_ost["ФИО менеджера"] == "Менеджер СХПП",
-        "Наименование подразделения",
-    ] = "СГИ_СХПП"
-
-    # TODO переделать на использование MAP
-    """
-        # 1. Создаем тестовую таблицу
-        data = {
-            'Колонка_1':,
-            'Колонка_2': ['банан', 'яблоко', 'апельсин', 'груша', 'банан'],
-            'Колонка_3': ['исходное_1', 'исходное_2', 'исходное_3', 'исходное_4', 'исходное_5']
-        }
-        df = pd.DataFrame(data)
-
-        # 2. Создаем словарь замен
-        # Ключ — что ищем в Колонке_2, Значение — что ставим в Колонку_3
-        словарь_замен = {
-            'банан': 'результат_банан',
-            'апельсин': 'результат_апельсин'
-        }
-
-        # 3. Делаем замену
-        # .map() ищет совпадения из Колонки_2 в словаре. 
-        # .fillna(df['Колонка_3']) оставляет старые значения там, где совпадений не нашлось.
-        df['Колонка_3'] = df['Колонка_2'].map(словарь_замен).fillna(df['Колонка_3'])
-    """
+    replace_dict = {
+        "Менеджер УМАИТиТ ОТ": "СГИ_ОТ",
+        "Менеджер УМАИТиТ ОАСУТП": "СГИ_ОАСУТП",
+        "Менеджер УМАИТиТ ОИТ": "СГИ_ОИТ",
+        "Менеджер ИХАЛ": "СГИ_ИХАЛ",
+        "Менеджер УПНГиППД": "СГИ_УПНГ",
+        'Менеджер блока "Энергетика"': "СГИ_Блок Энергетика",
+        "Менеджер ОГМ": "СГИ_ОГМ",
+        "Менеджер УДНГ": "СГИ_УДНГ",
+        "Менеджер УЭТ": "СГИ_УЭТ",
+        "Менеджер СХПП": "СГИ_СХПП",
+    }
+    c1_ost["Наименование подразделения"] = (
+        c1_ost["ФИО менеджера"]
+        .map(replace_dict)
+        .fillna(c1_ost["Наименование подразделения"])
+    )
 
     c1_ost["Наименование подразделения"] = (
         c1_ost["Наименование подразделения"]
@@ -547,7 +492,7 @@ def transform(
     if date3y_in is None:
         # вычисляем конец прошлого месяца -3 года
         date3y = pd.to_datetime(
-            datetime.date(datetime.datetime.now(tz=None).year - 3, 12, 31)  # noqa: DTZ005
+            datetime.date(datetime.datetime.now(tz=None).year - 3, 12, 31)
         )
     else:
         date3y = pd.to_datetime(date3y_in)
@@ -941,7 +886,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
 
     # переиндексация для сохранения порядка колонок в сводной, сброс индекса для вывода в виде таблицы
     table = table.reindex(param["pivot_sum"], axis=1)
-    table.reset_index(inplace=True)
+    table = table.reset_index()
 
     # формирование таблицы итогов по отделам
     itogt = pd.pivot_table(
@@ -951,7 +896,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         index=param["pivot_ind"][:2],
         aggfunc="sum",
     ).reindex(param["pivot_sum"], axis=1)
-    itogt.reset_index(inplace=True)
+    itogt = itogt.reset_index()
 
     # формирование сводного фрейма по виду запасов
     itogt11 = pd.pivot_table(
@@ -963,7 +908,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         ],
         aggfunc="sum",
     ).reindex(param["pivot_sum"], axis=1)
-    itogt11.reset_index(inplace=True)
+    itogt11 = itogt11.reset_index()
 
     # формирование сводного фрейма по виду деятельности (мтр/онсс)
     itogt2 = pd.pivot_table(
@@ -973,7 +918,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         index=param["pivot_ind"][1:2],
         aggfunc="sum",
     ).reindex(param["pivot_sum"], axis=1)
-    itogt2.reset_index(inplace=True)
+    itogt2 = itogt2.reset_index()
 
     for row in table.itertuples():
         # сборка фильтров для вывода фреймов расшифровок
@@ -1199,10 +1144,11 @@ def combined(db_l: Datcls):
     c1_ost["НомЗаяв"] = c1_ost["НомЗаяв"].astype("str")
     c1_ost["Позиция"] = c1_ost["Позиция"].astype("str")
     c1_ost["НомЗаяв"] = c1_ost["НомЗаяв"] + " / " + c1_ost["Позиция"]
-    c1_ost.drop("Позиция", inplace=True, axis="columns")
+    # c1_ost.drop("Позиция", inplace=True, axis="columns")
+    c1_ost = c1_ost.drop("Позиция", axis="columns")
 
     vp["Сумма (без НДС)"] = vp["Сумма"] / 1.22
-    vp.drop("Сумма", inplace=True, axis="columns")
+    vp = vp.drop("Сумма", axis="columns")
 
     c1_ost = c1_ost.rename(
         columns={
@@ -1304,7 +1250,7 @@ def combined(db_l: Datcls):
 
     cols_to_move_l = res.columns.tolist()
     ll_today = pd.to_datetime("today")
-    res.reset_index(drop=True, inplace=True)
+    res = res.reset_index(drop=True)
     res = res.apply(mfunc1, args=(ll_today,), axis=1)
     res = res[cols_to_move_l + [x for x in res.columns if x not in cols_to_move_l]]
 
@@ -1480,10 +1426,10 @@ def report(
 
     startTime = timer("==Запись 'base' начата")
     # save_ws(dfl, wsbase, add_filter=True)
-    basefile = "out/base.xlsx"
-    base_writer = initexcel(basefile, gl_style, "base_writer")
-    dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
-    base_writer.close()
+    # basefile = "out/base.xlsx"
+    # base_writer = initexcel(basefile, gl_style, "base_writer")
+    # dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
+    # base_writer.close()
     timer("==Запись 'base' начата", startTime)
 
     # записать возвратный план
@@ -1495,6 +1441,7 @@ def report(
         "Счет",
         "Номенклатура / ОС",
         "КСМ",
+        "KKM",
         "Единица измерения",
         "Склад / Контрагент / Работник",
         "Начальный остаток_Количество",
@@ -1543,13 +1490,13 @@ def report(
 
     # фильтр по "Наименование подразделения"
     podr_sap = [
-        "Отдел автоматизированных систем управления технологическим процессом",
-        "Отдел телекоммуникаций",
-        "Отдел информационных технологий",
-        "Управление метрологии, автоматизации и информационных технологий и телекоммуникаций (не использовать)",
-        "ОАСУТП",
-        "ОТ",
-        "ОИТ",
+        "СГИ_Отдел автоматизированных систем управления технологическим процессом",
+        "СГИ_Отдел телекоммуникаций",
+        "СГИ_Отдел информационных технологий",
+        "СГИ_Управление метрологии, автоматизации и информационных технологий и телекоммуникаций (не использовать)",
+        "СГИ_ОАСУТП",
+        "СГИ_ОТ",
+        "СГИ_ОИТ",
     ]
 
     # выборка по фильтрам
@@ -1640,19 +1587,29 @@ def report(
         f"Всё что пришло {date3y_in} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date3y_in_tt}",
     )
 
+    listmessage2 = (
+        f"Вырезка остатков по классу Остатки из файла: {files[1]}",
+        f"Дата прихода и конечный остаток центральных складов из файла: {files[0]}",
+        f"Начальный остаток центральных складов из файла: {files[2]}",
+        "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой '2020-01-01'",
+        f"Всё что пришло {date3y_in} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date3y_in_tt}",
+    )
+
     wssumm.write_column(0, 0, listmessage)
 
     # автоподбор ширины колонок
     # вывод таблиц с расшифровками
-    toe(dfl_s, params)
-    wssumm.autofit()
-    wssumm.set_column(0, 0, 14)
-    # wssumm.set_column(4, 9, 24)
-    wssumm.set_column(4, 12, 24)
+    # toe(dfl_s, params)
+    # wssumm.autofit()
+    # wssumm.set_column(0, 0, 14)
+    # wssumm.set_column(4, 12, 24)
 
-    # расстановка обратных ссылок на листы с расшифровкой
-    params["префиксл"] = ["Расх_"]
-    hyperlink(params)
+    # =========УМАИТ
+    params["префиксл"] = "Расх_"
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
+    save_ws(dfl_s, wsfilter, add_filter=True)
+    wssumm.write_column(0, 0, listmessage)
+    summ(wssumm, dfl_s, params)
 
     # вывод по СГИ
     # ихал
@@ -1666,8 +1623,9 @@ def report(
     podr_sap = ["СГИ_ИХАЛ"]
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
-    save_ws(dfl_s, wsfilter_ihal, add_filter=True)
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
 
+    save_ws(dfl_s, wsfilter_ihal, add_filter=True)
     wssumm_ihal.write_column(0, 0, listmessage)
     summ(wssumm_ihal, dfl_s, params)
 
@@ -1680,6 +1638,7 @@ def report(
     podr_sap = ["СГИ_УПНГ"]
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
     save_ws(dfl_s, wsfilter_upng, add_filter=True)
 
     # wssumm_upng.write_column(0, 0, listmessage)
@@ -1706,6 +1665,7 @@ def report(
 
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
     save_ws(dfl_s, wsfilter_sgi, add_filter=True)
 
     # wssumm_upng.write_column(0, 0, listmessage)
@@ -2085,6 +2045,8 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
 
     if gl_writer is not None:
         gl_writer.close()
+
+    if gl_writer_sgi is not None:
         gl_writer_sgi.close()
 
     print("Завершено.")
