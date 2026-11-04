@@ -327,14 +327,13 @@ def transform(
     # перенос данных из выгружаемых запасов "ДатПервПст" в выгрузку 1с
     # print(c1_ost.dtypes)
     # c1_ost["ДатаПервПост"] = pd.to_datetime(c1_ost["ДатаПервПост"], errors="coerce")
-    c1_ost.rename(
+    c1_ost = c1_ost.rename(
         columns={
             "Характеристика.Документ поступления.Дата": "ДатаПервПост_1c",
             "Документ посутпления - Дата": "ДатаПервПост_1c",
             "Обозначение": "Обознач. склада",
             "Доступное кол-во": "Количество",
         },
-        inplace=True,
         errors="ignore",
     )
 
@@ -547,7 +546,7 @@ def transform(
     if date3y_in is None:
         # вычисляем конец прошлого месяца -3 года
         date3y = pd.to_datetime(
-            datetime.date(datetime.datetime.now(tz=None).year - 3, 12, 31)  # noqa: DTZ005
+            datetime.date(datetime.datetime.now(tz=None).year - 3, 12, 31)
         )
     else:
         date3y = pd.to_datetime(date3y_in)
@@ -941,7 +940,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
 
     # переиндексация для сохранения порядка колонок в сводной, сброс индекса для вывода в виде таблицы
     table = table.reindex(param["pivot_sum"], axis=1)
-    table.reset_index(inplace=True)
+    table = table.reset_index()
 
     # формирование таблицы итогов по отделам
     itogt = pd.pivot_table(
@@ -951,7 +950,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         index=param["pivot_ind"][:2],
         aggfunc="sum",
     ).reindex(param["pivot_sum"], axis=1)
-    itogt.reset_index(inplace=True)
+    itogt = itogt.reset_index()
 
     # формирование сводного фрейма по виду запасов
     itogt11 = pd.pivot_table(
@@ -963,7 +962,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         ],
         aggfunc="sum",
     ).reindex(param["pivot_sum"], axis=1)
-    itogt11.reset_index(inplace=True)
+    itogt11 = itogt11.reset_index()
 
     # формирование сводного фрейма по виду деятельности (мтр/онсс)
     itogt2 = pd.pivot_table(
@@ -973,7 +972,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         index=param["pivot_ind"][1:2],
         aggfunc="sum",
     ).reindex(param["pivot_sum"], axis=1)
-    itogt2.reset_index(inplace=True)
+    itogt2 = itogt2.reset_index()
 
     for row in table.itertuples():
         # сборка фильтров для вывода фреймов расшифровок
@@ -1202,7 +1201,7 @@ def combined(db_l: Datcls):
     c1_ost.drop("Позиция", inplace=True, axis="columns")
 
     vp["Сумма (без НДС)"] = vp["Сумма"] / 1.22
-    vp.drop("Сумма", inplace=True, axis="columns")
+    vp = vp.drop("Сумма", axis="columns")
 
     c1_ost = c1_ost.rename(
         columns={
@@ -1304,7 +1303,7 @@ def combined(db_l: Datcls):
 
     cols_to_move_l = res.columns.tolist()
     ll_today = pd.to_datetime("today")
-    res.reset_index(drop=True, inplace=True)
+    res = res.reset_index(drop=True)
     res = res.apply(mfunc1, args=(ll_today,), axis=1)
     res = res[cols_to_move_l + [x for x in res.columns if x not in cols_to_move_l]]
 
@@ -1666,6 +1665,7 @@ def report(
     podr_sap = ["СГИ_ИХАЛ"]
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
     save_ws(dfl_s, wsfilter_ihal, add_filter=True)
 
     wssumm_ihal.write_column(0, 0, listmessage)
@@ -1680,6 +1680,7 @@ def report(
     podr_sap = ["СГИ_УПНГ"]
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
     save_ws(dfl_s, wsfilter_upng, add_filter=True)
 
     # wssumm_upng.write_column(0, 0, listmessage)
@@ -1706,6 +1707,7 @@ def report(
 
     dfl_s = dfl[goodlist]
     dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
     save_ws(dfl_s, wsfilter_sgi, add_filter=True)
 
     # wssumm_upng.write_column(0, 0, listmessage)
