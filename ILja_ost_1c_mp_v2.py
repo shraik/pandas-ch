@@ -1415,9 +1415,17 @@ def report(
     wssumm_sgi = workbook_sgi.add_worksheet("Суммы_СГИ")
     wssumm_ihal = workbook_sgi.add_worksheet("Суммы_ИХАЛ")
     wssumm_upng = workbook_sgi.add_worksheet("Суммы_УПНГ")
+    wssumm_gsm = workbook_sgi.add_worksheet("Суммы_ГСМ")
+    wssumm_ing = workbook_sgi.add_worksheet("Суммы_ингибитор")
+    wssumm_kab = workbook_sgi.add_worksheet("Суммы_кабель")
+    wssumm_truba = workbook_sgi.add_worksheet("Суммы_труба")
     wsfilter_sgi = workbook_sgi.add_worksheet("filter_СГИ")
     wsfilter_ihal = workbook_sgi.add_worksheet("filter_ИХАЛ")
     wsfilter_upng = workbook_sgi.add_worksheet("filter_УПНГ")
+    wsfilter_gsm = workbook_sgi.add_worksheet("filter_ГСМ")
+    wsfilter_ing = workbook_sgi.add_worksheet("filter_ингибитор")
+    wsfilter_kab = workbook_sgi.add_worksheet("filter_кабель")
+    wsfilter_truba = workbook_sgi.add_worksheet("filter_труба")
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
@@ -1500,11 +1508,7 @@ def report(
     ]
 
     # выборка по фильтрам
-    dfl_s = dfl_s[
-        dfl_s["Наименование подразделения"].isin(podr_sap)
-        # тк нужные данные внесены в наим. подр. фильтр по складу можно сбросить
-        # | dfl_s["Склад / Контрагент / Работник"].isin(mol_1c)
-    ]
+    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
 
     # записать в excel выборку колонок
     # dfl_s.to_excel(gl_writer, sheet_name="filter", index=False)
@@ -1612,6 +1616,38 @@ def report(
     summ(wssumm, dfl_s, params)
 
     # вывод по СГИ
+
+    # =======выпиливание из остатков запаса по спец-классам dfl
+    # ГСМ (класс 26-050)
+    condition = dfl["KKM"].str.startswith("26-050")
+    dfl_gsm = dfl.loc[condition].copy()
+    save_ws(dfl_gsm, wsfilter_gsm, add_filter=True)
+
+    # ингибитор (класс 27-02040)
+    condition2 = dfl["KKM"].str.startswith("27-02040")
+    dfl_ing = dfl.loc[condition2].copy()
+    save_ws(dfl_ing, wsfilter_ing, add_filter=True)
+
+    #   кабель КПБК (класс 11-0205)
+    condition3 = dfl["KKM"].str.startswith("11-0205")
+    dfl_kab = dfl.loc[condition3].copy()
+    save_ws(dfl_kab, wsfilter_kab, add_filter=True)
+
+    # труба полимерная (класс 29-020201)
+    condition4 = dfl["KKM"].str.startswith("29-020201")
+    dfl_truba = dfl.loc[condition4].copy()
+    save_ws(dfl_truba, wsfilter_truba, add_filter=True)
+
+    # wssumm_ing = workbook_sgi.add_worksheet("Суммы_ингибитор")
+    # wssumm_kab = workbook_sgi.add_worksheet("Суммы_кабель")
+    # wssumm_truba = workbook_sgi.add_worksheet("Суммы_труба")
+
+    master_cond = condition | condition2 | condition3 | condition4
+    # 3. Удаляем эти строки из исходного DataFrame
+    # Инвертируем маску с помощью оператора ~ (выбираем тех, кто НЕ младше 18)
+    # dfl = dfl.loc[~condition].reset_index(drop=True)
+    dfl = dfl.loc[~master_cond].reset_index(drop=True)
+
     # ихал
     # корректировка параметров вывода отчета
     params["страница"] = "Суммы_ИХАЛ"
@@ -1670,6 +1706,19 @@ def report(
 
     # wssumm_upng.write_column(0, 0, listmessage)
     summ(wssumm_sgi, dfl_s, params)
+
+    # ГСМ
+    # wssumm_gsm
+    params["страница"] = "Суммы_ГСМ"
+    params["префиксл"] = "Р_ГСМ"
+
+    dfl_s = dfl_gsm[goodlist]
+    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
+    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
+    # save_ws(dfl_s, wsfilter_sgi, add_filter=True)
+
+    # wssumm_upng.write_column(0, 0, listmessage)
+    summ(wssumm_gsm, dfl_s, params)
 
 
 def readparallel() -> list:
