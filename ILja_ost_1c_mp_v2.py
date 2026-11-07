@@ -1436,7 +1436,10 @@ def report(
     wssumm_upng = workbook_sgi.add_worksheet("Суммы_УПНГ")
     wssumm_udng = workbook_sgi.add_worksheet("Суммы_УДНГ")
     wssumm_be = workbook_sgi.add_worksheet("Суммы_БЭ")
+    wssumm_uet = workbook_sgi.add_worksheet("Суммы_УЭТ")
+    wssumm_ogm = workbook_sgi.add_worksheet("Суммы_ОГМ")
     wssumm_ihal = workbook_sgi.add_worksheet("Суммы_ИХАЛ")
+    wssumm_shpp = workbook_sgi.add_worksheet("Суммы_СХПП")
     wssumm_gsm = workbook_sgi.add_worksheet("Суммы_ГСМ")
     wssumm_ing = workbook_sgi.add_worksheet("Суммы_ингибитор")
     wssumm_kab = workbook_sgi.add_worksheet("Суммы_кабель")
@@ -1445,7 +1448,10 @@ def report(
     wsfilter_upng = workbook_sgi.add_worksheet("filter_УПНГ")
     wsfilter_udng = workbook_sgi.add_worksheet("filter_УДНГ")
     wsfilter_be = workbook_sgi.add_worksheet("filter_БЭ")
+    wsfilter_uet = workbook_sgi.add_worksheet("filter_УЭТ")
+    wsfilter_ogm = workbook_sgi.add_worksheet("filter_ОГМ")
     wsfilter_ihal = workbook_sgi.add_worksheet("filter_ИХАЛ")
+    wsfilter_shpp = workbook_sgi.add_worksheet("filter_СХПП")
     wsfilter_gsm = workbook_sgi.add_worksheet("filter_ГСМ")
     wsfilter_ing = workbook_sgi.add_worksheet("filter_ингибитор")
     wsfilter_kab = workbook_sgi.add_worksheet("filter_кабель")
@@ -1709,12 +1715,36 @@ def report(
             "подразделения": ["СГИ_Блок Энергетика"],
         },
         {
+            # УЭТ
+            "condition": None,
+            "filterlist": wsfilter_uet,
+            "summlist": wssumm_uet,
+            "префиксл": "Р_УЭТ",
+            "подразделения": ["СГИ_УЭТ"],
+        },
+        {
+            # ОГМ
+            "condition": None,
+            "filterlist": wsfilter_ogm,
+            "summlist": wssumm_ogm,
+            "префиксл": "Р_ОГМ",
+            "подразделения": ["СГИ_ОГМ"],
+        },
+        {
             # Ихал
             "condition": None,
             "filterlist": wsfilter_ihal,
             "summlist": wssumm_ihal,
             "префиксл": "Р_Ихал",
             "подразделения": ["СГИ_ИХАЛ"],
+        },
+        {
+            # СХПП
+            "condition": None,
+            "filterlist": wsfilter_shpp,
+            "summlist": wssumm_shpp,
+            "префиксл": "Р_Схпп",
+            "подразделения": ["СГИ_СХПП"],
         },
         {
             # СГИ
