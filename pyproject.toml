@@ -12,6 +12,5 @@ dependencies = [
     "python-calamine>=0.6.2",
     "sqlalchemy>=2.0.49",
     "tkcalendar>=1.6.1",
-    "toml>=0.10.2",
     "xlsxwriter>=3.2.9",
 ]
