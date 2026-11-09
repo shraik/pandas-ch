@@ -4,13 +4,14 @@ from openpyxl import load_workbook
 
 if __name__ == "__main__":
     # 1. Загружаем Excel-файл (укажите путь к вашему файлу)
+    ppath = r"R:\03. ЗГД_ГИ\07. УМАИТТ\06. Общая\Документация к рассмотрению\ВКС модернизация\отчеты вп\tools\import\xlsx\Справочник сотрудников-1.xlsx"
     wb = load_workbook(
-        r"C:\python\pandas-ch\xlsx\Справочник сотрудников.xlsx",
+        ppath,
         data_only=True,
     )
 
     df = pd.read_excel(
-        r"C:\python\pandas-ch\xlsx\Справочник сотрудников.xlsx",
+        ppath,
         sheet_name="Справочник сотрудников",
         engine="openpyxl",
         header=None,
@@ -56,8 +57,12 @@ if __name__ == "__main__":
         for cell in row:
             # if cell.fill and cell.fill.fill_type == "solid":
             print(
-                f"Координаты: {cell.coordinate} | Цвет: {cell.fill.start_color.index} | {cell.value}"
+                f"Координаты: {cell.coordinate} | Цвет: {cell.fill.start_color.index} |Узор: {cell.fill.fill_type},{cell.fill.fgColor.rgb},{cell.fill.bgColor.rgb}| {cell.value}"
             )
+            # print("Тип заполнения (fill_type / patternType):", fill.fill_type)
+            # print("Цвет узора (fgColor.rgb / start_color):", fill.fgColor.rgb if fill.fgColor else None)
+            # print("Цвет фона (bgColor.rgb / end_color):", fill.bgColor.rgb if fill.bgColor else None)
+
             if cell.fill.start_color.index == "FFFFFF00":
                 # отдел
                 level3 = cell.value

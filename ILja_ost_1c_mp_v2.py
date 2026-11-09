@@ -1464,10 +1464,10 @@ def report(
 
     startTime = timer("==Запись 'base' начата")
     # save_ws(dfl, wsbase, add_filter=True)
-    # basefile = "out/base.xlsx"
-    # base_writer = initexcel(basefile, gl_style, "base_writer")
-    # dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
-    # base_writer.close()
+    basefile = "out/base.xlsx"
+    base_writer = initexcel(basefile, gl_style, "base_writer")
+    dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
+    base_writer.close()
     timer("==Запись 'base' начата", startTime)
 
     # записать возвратный план
@@ -1617,14 +1617,6 @@ def report(
 
     listmessage = (
         f"Остатки из файла: {files[1]}",
-        f"Дата прихода и конечный остаток центральных складов из файла: {files[0]}",
-        f"Начальный остаток центральных складов из файла: {files[2]}",
-        "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой '2020-01-01'",
-        f"Всё что пришло {date3y_in} и раньше, считается 3х летками. Точные 3х летки (ТТ) рассчитаны на дату {date3y_in_tt}",
-    )
-
-    listmessage2 = (
-        f"Вырезка остатков по классу Остатки из файла: {files[1]}",
         f"Дата прихода и конечный остаток центральных складов из файла: {files[0]}",
         f"Начальный остаток центральных складов из файла: {files[2]}",
         "Дата первой поставки взята из остатков SAP, оставшиеся пустые заполнены из остатков 1С, оставшиеся пустые заполнены константой '2020-01-01'",
@@ -1789,46 +1781,6 @@ def report(
         params["префиксл"] = pi["префиксл"]
 
         summ(pi["summlist"], dfl_pl, params, listmessage)  # ty: ignore[invalid-argument-type]
-
-    # =========СГИ
-    # корректировка параметров вывода отчета
-    params["страница"] = "Суммы_СГИ"
-    params["префиксл"] = "Р_СГИ"
-
-    wssumm_sgi.write_column(0, 0, listmessage)
-    podr_sap = [
-        "СГИ_УПНГ",
-        "СГИ_УДНГ",
-        "СГИ_Блок Энергетика",
-        "СГИ_УЭТ",
-        "СГИ_ОГМ",
-        "СГИ_ИХАЛ",
-        "СГИ_ОТ",
-        "СГИ_ОАСУТП",
-        "СГИ_ОИТ",
-        "СГИ_СХПП",
-    ]
-
-    dfl_s = dfl[goodlist]
-    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
-    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
-    save_ws(dfl_s, wsfilter_sgi, add_filter=True)
-
-    # wssumm_upng.write_column(0, 0, listmessage)
-    summ(wssumm_sgi, dfl_s, params)
-
-    # ГСМ
-    # wssumm_gsm
-    params["страница"] = "Суммы_ГСМ"
-    params["префиксл"] = "Р_ГСМ"
-
-    dfl_s = dfl_gsm[goodlist]
-    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
-    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
-    # save_ws(dfl_s, wsfilter_sgi, add_filter=True)
-
-    # wssumm_upng.write_column(0, 0, listmessage)
-    summ(wssumm_gsm, dfl_s, params)
 
 
 def readparallel() -> list:
