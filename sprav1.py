@@ -1,4 +1,6 @@
 # формирование плоского справочника по цвету
+from pathlib import Path
+
 import pandas as pd
 from openpyxl import load_workbook
 
@@ -46,11 +48,13 @@ if __name__ == "__main__":
     level1 = ""
     level2 = ""
     level3 = ""
+    level4 = ""
     # переименование колонок
     df.columns = df.iloc[1]
     df["level1"] = ""
     df["level2"] = ""
     df["level3"] = ""
+    df["level4"] = ""
     print(df.shape)
     print("------------------")
     for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, min_col=1, max_col=1):
@@ -65,7 +69,12 @@ if __name__ == "__main__":
 
             if cell.fill.start_color.index == "FFFFFF00":
                 # отдел
-                level3 = cell.value
+                if cell.fill.fill_type == "solid":
+                    level3 = cell.value
+                    level4 = ""
+                else:
+                    level4 = cell.value
+
             elif cell.fill.start_color.index == "FFFABF8F":
                 # упр
                 level2 = cell.value
@@ -79,6 +88,7 @@ if __name__ == "__main__":
             df.iat[cell.row - 1, 7] = level1
             df.iat[cell.row - 1, 8] = level2
             df.iat[cell.row - 1, 9] = level3
+            df.iat[cell.row - 1, 10] = level4
 
     print("------------------\nИтоговый фрейм")
     print(df.dtypes)
@@ -86,5 +96,6 @@ if __name__ == "__main__":
     # print(df)
     # print("------------------")
     # print(df[df.columns[0]].head(25))
-
+    df = df.dropna(subset="ФИО")
     df.to_excel("Спр2.xlsx", engine="xlsxwriter", index=True)
+    print(f"Выполнено. выгружено в файл {Path('Спр2.xlsx').resolve()!s}")
