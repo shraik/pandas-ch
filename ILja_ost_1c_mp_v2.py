@@ -21,6 +21,8 @@ from tkinter import filedialog as fd
 
 # from typing import Optional
 import pandas as pd
+
+# import xlsxwriter
 from babel import Locale
 from clickhouse_connect import driver as ch_driver
 from numpy import nan as NP_NAN
@@ -132,19 +134,26 @@ def initexcel(pathtofile: str, ldata: Datcls, writername: str) -> pd.ExcelWriter
     return writer
 
 
-def hyperlink(param):
+def hyperlink(param, ws_in: Worksheet):
     # добавление гиперссылок назад на листы
     wsts = param["writer"].book.worksheets()
+
+    if param.get("страница", None) and ws_in:
+        strname = ws_in.name
+    else:
+        strname = param["страница"]
     for sheet in wsts:
         sn = sheet.get_name()
         if sn[:5] in param["префиксл"]:
             sheet.write_url(
                 "A1",
                 "internal:'"
-                + gl_back_addr.get(sn + "_p", param["страница"])
+                # + gl_back_addr.get(sn + "_p", param["страница"])
+                + gl_back_addr.get(sn + "_p", strname)
                 + "'!"
                 + gl_back_addr[sn],
-                string=gl_back_addr.get(sn + "_p", param["страница"]),
+                # string=gl_back_addr.get(sn + "_p", param["страница"]),
+                string=gl_back_addr.get(sn + "_p", strname),
             )
 
         else:
@@ -793,10 +802,15 @@ def outtable(
     table_l: pd.DataFrame,
     text_str: str,
     nametable: str,
+    ws_in: Worksheet | None = None,
 ) -> int:
     # вывод таблицы на лист
 
-    wsheet = param_l["writer"].book.get_worksheet_by_name(param_l["страница"])
+    if ws_in:
+        wsheet = ws_in
+    else:
+        wsheet = param_l["writer"].book.get_worksheet_by_name(param_l["страница"])
+
     # вывод описания над таблицей
     wsheet.write_string(
         cur_row_l,
@@ -837,7 +851,7 @@ def outtable(
     return lastrow
 
 
-def toe(mol_pd: pd.DataFrame, param: dict) -> int:
+def toe(mol_pd: pd.DataFrame, param: dict, ws_in: Worksheet | None = None) -> int:
     """
     Формирование сводной таблицы и вывод в excel файл с расшифровками по уровням.
 
@@ -870,9 +884,12 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
     sh_count = 0
 
     # проверить что страница для вывода существует, если нет - создать
-    worksheet = param["writer"].book.get_worksheet_by_name(param["страница"])
-    if worksheet is None:
-        worksheet = param["writer"].book.add_worksheet(param["страница"])
+    if ws_in:
+        worksheet = ws_in
+    else:
+        worksheet = param["writer"].book.get_worksheet_by_name(param["страница"])
+        if worksheet is None:
+            worksheet = param["writer"].book.add_worksheet(param["страница"])
 
     # свертка по параметрам из словаря, формирование сводной
     table = pd.pivot_table(
@@ -1015,6 +1032,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         itogt,
         "Итоги по отделам: ",
         "Итоги1" + param["префиксл"],
+        worksheet,
     )
 
     # вывод таблицы подитога11
@@ -1029,6 +1047,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         itogt11,
         "Итоги по виду запаса: ",
         "Итоги_вз" + param["префиксл"],
+        worksheet,
     )
 
     # вывод таблицы подитога2
@@ -1042,6 +1061,7 @@ def toe(mol_pd: pd.DataFrame, param: dict) -> int:
         itogt2,
         "Итоги по виду деятельности:",
         "Итоги_вд" + param["префиксл"],
+        worksheet,
     )
     return cur_row
 
@@ -1413,15 +1433,25 @@ def report(
 
     workbook_sgi = gl_writer_sgi.book
     wssumm_sgi = workbook_sgi.add_worksheet("Суммы_СГИ")
-    wssumm_ihal = workbook_sgi.add_worksheet("Суммы_ИХАЛ")
     wssumm_upng = workbook_sgi.add_worksheet("Суммы_УПНГ")
+    wssumm_udng = workbook_sgi.add_worksheet("Суммы_УДНГ")
+    wssumm_be = workbook_sgi.add_worksheet("Суммы_БЭ")
+    wssumm_uet = workbook_sgi.add_worksheet("Суммы_УЭТ")
+    wssumm_ogm = workbook_sgi.add_worksheet("Суммы_ОГМ")
+    wssumm_ihal = workbook_sgi.add_worksheet("Суммы_ИХАЛ")
+    wssumm_shpp = workbook_sgi.add_worksheet("Суммы_СХПП")
     wssumm_gsm = workbook_sgi.add_worksheet("Суммы_ГСМ")
     wssumm_ing = workbook_sgi.add_worksheet("Суммы_ингибитор")
     wssumm_kab = workbook_sgi.add_worksheet("Суммы_кабель")
     wssumm_truba = workbook_sgi.add_worksheet("Суммы_труба")
     wsfilter_sgi = workbook_sgi.add_worksheet("filter_СГИ")
-    wsfilter_ihal = workbook_sgi.add_worksheet("filter_ИХАЛ")
     wsfilter_upng = workbook_sgi.add_worksheet("filter_УПНГ")
+    wsfilter_udng = workbook_sgi.add_worksheet("filter_УДНГ")
+    wsfilter_be = workbook_sgi.add_worksheet("filter_БЭ")
+    wsfilter_uet = workbook_sgi.add_worksheet("filter_УЭТ")
+    wsfilter_ogm = workbook_sgi.add_worksheet("filter_ОГМ")
+    wsfilter_ihal = workbook_sgi.add_worksheet("filter_ИХАЛ")
+    wsfilter_shpp = workbook_sgi.add_worksheet("filter_СХПП")
     wsfilter_gsm = workbook_sgi.add_worksheet("filter_ГСМ")
     wsfilter_ing = workbook_sgi.add_worksheet("filter_ингибитор")
     wsfilter_kab = workbook_sgi.add_worksheet("filter_кабель")
@@ -1454,6 +1484,7 @@ def report(
         "Склад / Контрагент / Работник",
         "Начальный остаток_Количество",
         "Начальный остаток_Сумма (без НДС)",
+        "Начальный остаток_Итого с ТЗР (без НДС)",
         "Приход_Количество",
         "Приход_Сумма (без НДС)",
         "Приход_в т.ч. сумма доп. расходов",
@@ -1551,6 +1582,7 @@ def report(
 
     # генерация и вывод сводной
     param_sum = [
+        "Начальный остаток_Итого с ТЗР (без НДС)",
         "Освоение_Итого с ТЗР (без НДС)",
         # "Расход_в т.ч. сумма доп. расходов",
         "Конечный остаток_Сумма (без НДС)",
@@ -1616,69 +1648,147 @@ def report(
     summ(wssumm, dfl_s, params)
 
     # вывод по СГИ
-
-    # =======выпиливание из остатков запаса по спец-классам dfl
-    # ГСМ (класс 26-050)
-    condition = dfl["KKM"].str.startswith("26-050")
-    dfl_gsm = dfl.loc[condition].copy()
-    save_ws(dfl_gsm, wsfilter_gsm, add_filter=True)
-
-    # ингибитор (класс 27-02040)
-    condition2 = dfl["KKM"].str.startswith("27-02040")
-    dfl_ing = dfl.loc[condition2].copy()
-    save_ws(dfl_ing, wsfilter_ing, add_filter=True)
-
-    #   кабель КПБК (класс 11-0205)
-    condition3 = dfl["KKM"].str.startswith("11-0205")
-    dfl_kab = dfl.loc[condition3].copy()
-    save_ws(dfl_kab, wsfilter_kab, add_filter=True)
-
-    # труба полимерная (класс 29-020201)
-    condition4 = dfl["KKM"].str.startswith("29-020201")
-    dfl_truba = dfl.loc[condition4].copy()
-    save_ws(dfl_truba, wsfilter_truba, add_filter=True)
-
-    # wssumm_ing = workbook_sgi.add_worksheet("Суммы_ингибитор")
-    # wssumm_kab = workbook_sgi.add_worksheet("Суммы_кабель")
-    # wssumm_truba = workbook_sgi.add_worksheet("Суммы_труба")
-
-    master_cond = condition | condition2 | condition3 | condition4
-    # 3. Удаляем эти строки из исходного DataFrame
-    # Инвертируем маску с помощью оператора ~ (выбираем тех, кто НЕ младше 18)
-    # dfl = dfl.loc[~condition].reset_index(drop=True)
-    dfl = dfl.loc[~master_cond].reset_index(drop=True)
-
-    # ихал
     # корректировка параметров вывода отчета
-    params["страница"] = "Суммы_ИХАЛ"
     params["writer"] = gl_writer_sgi
     params["writer_name"] = "gl_writer_sgi"
-    params["префиксл"] = "Р_Ихал"
 
-    # фильтр по "Наименование подразделения" и выборка по фильтрам
-    podr_sap = ["СГИ_ИХАЛ"]
-    dfl_s = dfl[goodlist]
-    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
-    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
+    dfl_gl = dfl[goodlist]
+    podr_sgi = [
+        "СГИ_УПНГ",
+        "СГИ_УДНГ",
+        "СГИ_Блок Энергетика",
+        "СГИ_УЭТ",
+        "СГИ_ОГМ",
+        "СГИ_ИХАЛ",
+        "СГИ_ОТ",
+        "СГИ_ОАСУТП",
+        "СГИ_ОИТ",
+        "СГИ_СХПП",
+    ]
+    # формирование плана для вывода листов в отчет
 
-    save_ws(dfl_s, wsfilter_ihal, add_filter=True)
-    wssumm_ihal.write_column(0, 0, listmessage)
-    summ(wssumm_ihal, dfl_s, params)
+    theplan = [
+        {
+            # ГСМ (класс 26-050)
+            "condition": "26-050",
+            "filterlist": wsfilter_gsm,
+            "summlist": wssumm_gsm,
+            "префиксл": "Р_ГСМ",
+            "подразделения": podr_sgi,
+        },
+        {
+            # ингибитор (класс 27-02040)
+            "condition": "27-02040",
+            "filterlist": wsfilter_ing,
+            "summlist": wssumm_ing,
+            "префиксл": "Р_ИНГ",
+            "подразделения": podr_sgi,
+        },
+        {
+            # кабель КПБК (класс 11-0205)
+            "condition": "11-0205",
+            "filterlist": wsfilter_kab,
+            "summlist": wssumm_kab,
+            "префиксл": "Р_каб",
+            "подразделения": podr_sgi,
+        },
+        {
+            # труба полимерная (класс 29-020201)
+            "condition": "29-020201",
+            "filterlist": wsfilter_truba,
+            "summlist": wssumm_truba,
+            "префиксл": "Р_труб",
+            "подразделения": podr_sgi,
+        },
+        {
+            # УПНГ
+            "condition": None,
+            "filterlist": wsfilter_upng,
+            "summlist": wssumm_upng,
+            "префиксл": "Р_УПНГ",
+            "подразделения": ["СГИ_УПНГ"],
+        },
+        {
+            # УДНГ
+            "condition": None,
+            "filterlist": wsfilter_udng,
+            "summlist": wssumm_udng,
+            "префиксл": "Р_УДНГ",
+            "подразделения": ["СГИ_УДНГ"],
+        },
+        {
+            # Блок Энергетика
+            "condition": None,
+            "filterlist": wsfilter_be,
+            "summlist": wssumm_be,
+            "префиксл": "Р_Энерг",
+            "подразделения": ["СГИ_Блок Энергетика"],
+        },
+        {
+            # УЭТ
+            "condition": None,
+            "filterlist": wsfilter_uet,
+            "summlist": wssumm_uet,
+            "префиксл": "Р_УЭТ",
+            "подразделения": ["СГИ_УЭТ"],
+        },
+        {
+            # ОГМ
+            "condition": None,
+            "filterlist": wsfilter_ogm,
+            "summlist": wssumm_ogm,
+            "префиксл": "Р_ОГМ",
+            "подразделения": ["СГИ_ОГМ"],
+        },
+        {
+            # Ихал
+            "condition": None,
+            "filterlist": wsfilter_ihal,
+            "summlist": wssumm_ihal,
+            "префиксл": "Р_Ихал",
+            "подразделения": ["СГИ_ИХАЛ"],
+        },
+        {
+            # СХПП
+            "condition": None,
+            "filterlist": wsfilter_shpp,
+            "summlist": wssumm_shpp,
+            "префиксл": "Р_Схпп",
+            "подразделения": ["СГИ_СХПП"],
+        },
+        {
+            # СГИ
+            "condition": None,
+            "filterlist": wsfilter_sgi,
+            "summlist": wssumm_sgi,
+            "префиксл": "Р_СГИ",
+            "подразделения": podr_sgi,
+        },
+    ]
 
-    # =========УПНГ
-    # корректировка параметров вывода отчета
-    params["страница"] = "Суммы_УПНГ"
-    params["префиксл"] = "Р_УПНГ"
+    # =======выпиливание из остатков запаса по спец-классам
+    #   ГСМ (класс 26-050)
+    #   ингибитор (класс 27-02040)
+    #   кабель КПБК (класс 11-0205)
+    #   труба полимерная (класс 29-020201)
+    dpropcond = ["26-050", "27-02040", "11-0205", "29-020201"]
+    dfl = dfl_gl[~dfl_gl["KKM"].str.startswith(tuple(dpropcond))]
 
-    wssumm_upng.write_column(0, 0, listmessage)
-    podr_sap = ["СГИ_УПНГ"]
-    dfl_s = dfl[goodlist]
-    dfl_s = dfl_s[dfl_s["Наименование подразделения"].isin(podr_sap)]
-    dfl_s["Наименование подразделения"] = dfl_s["Наименование подразделения"].str[4:]
-    save_ws(dfl_s, wsfilter_upng, add_filter=True)
+    for pi in theplan:
+        if pi["condition"]:
+            pcond = dfl_gl["KKM"].str.startswith(pi["condition"])
+            dfl_pl = dfl_gl.loc[pcond].copy()
+        else:
+            # для подразделений использовать фрейм с вырезанными спец-остатками
+            dfl_pl = dfl
+        dfl_pl = dfl_pl[dfl_pl["Наименование подразделения"].isin(pi["подразделения"])]
+        save_ws(dfl_pl, pi["filterlist"], add_filter=True)  # ty: ignore[invalid-argument-type]
+        dfl_pl["Наименование подразделения"] = dfl_pl["Наименование подразделения"].str[
+            4:
+        ]
+        params["префиксл"] = pi["префиксл"]
 
-    # wssumm_upng.write_column(0, 0, listmessage)
-    summ(wssumm_upng, dfl_s, params)
+        summ(pi["summlist"], dfl_pl, params, listmessage)  # ty: ignore[invalid-argument-type]
 
     # =========СГИ
     # корректировка параметров вывода отчета
@@ -1907,16 +2017,27 @@ def monkey_path3():
         print(f"Monkey path3 {conffile} не найден. Пропускаем.")
 
 
-def summ(worksheet, ldf, lparam) -> int:
-    # автоподбор ширины колонок
+def summ(
+    worksheet: Worksheet,
+    ldf: pd.DataFrame,
+    lparam: dict,
+    listmessage: tuple | None = None,
+) -> int:
+
+    # вывод начального сообщения на лист
+    if listmessage:
+        worksheet.write_column(0, 0, listmessage)
+
     # вывод таблиц с расшифровками
-    toe(ldf, lparam)
+    toe(ldf, lparam, worksheet)
+
+    # автоподбор ширины колонок
     worksheet.autofit()
     worksheet.set_column(0, 0, 14)
     worksheet.set_column(4, 12, 24)
 
     # расстановка обратных ссылок на листы с расшифровкой
-    hyperlink(lparam)
+    hyperlink(lparam, worksheet)
 
     return 0
 
@@ -2035,6 +2156,7 @@ def start_parellel(date3y_in: datetime.date, date3y_in_tt: datetime.date) -> str
         # ===\\ блок вывода промежуточных файлов для отладки
         """
         startTime = timer(name="Начало записи в clickhouse, таблица c1_sap_ost_flat")
+
         intoclickhouse(
             gl_client,
             c1_ost,
@@ -2523,3 +2645,10 @@ if __name__ == "__main__":
     # start_parellel()
 
     interface()
+
+    """
+    # печать всех строк датафрейма
+        with pd.option_context("display.max_rows", None, "display.max_columns", None):  # more options can be specified also
+            print(c1_ost.dtypes)
+
+    """
