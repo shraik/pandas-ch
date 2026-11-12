@@ -1667,7 +1667,7 @@ def report(
     theplan = [
         {
             # ГСМ (класс 26-050)
-            "condition": "26-050",
+            "condition": ["26-050"],
             "filterlist": wsfilter_gsm,
             "summlist": wssumm_gsm,
             "префиксл": "Р_ГСМ",
@@ -1683,7 +1683,7 @@ def report(
         },
         {
             # кабель КПБК (класс 11-0205)
-            "condition": "11-0205",
+            "condition": ["11-0205"],
             "filterlist": wsfilter_kab,
             "summlist": wssumm_kab,
             "префиксл": "Р_каб",
@@ -1691,7 +1691,7 @@ def report(
         },
         {
             # труба полимерная (класс 29-020201)
-            "condition": "29-020201",
+            "condition": ["29-020201"],
             "filterlist": wsfilter_truba,
             "summlist": wssumm_truba,
             "префиксл": "Р_труб",
