@@ -448,6 +448,9 @@ def transform(
                 "Механик ЦДНГ правый берег": "СГИ_УДНГ",
                 "УОТП (материалы)": "СГИ_УДНГ",
                 "УОТП (НКТ)": "СГИ_УДНГ",
+                "Мейджерпак Урал": "СГИ_УДНГ",
+                "Мейджерпак Югра": "СГИ_УДНГ",
+                "Мейджерпак Югра (технолог.)": "СГИ_УДНГ",
                 "К-219 Мастер АВР ЦЭРТ": "СГИ_УЭТ",
                 "К-219 Мастер ЦЭРТ": "СГИ_УЭТ",
                 "К-219 склад ЛПА ЦЭРТ": "СГИ_УЭТ",
@@ -1444,6 +1447,7 @@ def report(
     wssumm_ing = workbook_sgi.add_worksheet("Суммы_ингибитор")
     wssumm_kab = workbook_sgi.add_worksheet("Суммы_кабель")
     wssumm_truba = workbook_sgi.add_worksheet("Суммы_труба")
+    wssumm_kta = workbook_sgi.add_worksheet("Суммы_кислота")
     wsfilter_sgi = workbook_sgi.add_worksheet("filter_СГИ")
     wsfilter_upng = workbook_sgi.add_worksheet("filter_УПНГ")
     wsfilter_udng = workbook_sgi.add_worksheet("filter_УДНГ")
@@ -1456,6 +1460,7 @@ def report(
     wsfilter_ing = workbook_sgi.add_worksheet("filter_ингибитор")
     wsfilter_kab = workbook_sgi.add_worksheet("filter_кабель")
     wsfilter_truba = workbook_sgi.add_worksheet("filter_труба")
+    wsfilter_kta = workbook_sgi.add_worksheet("filter_кислота")
 
     # записать в excel имеющиеся колонок
     # выключить для ускорения вывода
@@ -1464,10 +1469,10 @@ def report(
 
     startTime = timer("==Запись 'base' начата")
     # save_ws(dfl, wsbase, add_filter=True)
-    basefile = "out/base.xlsx"
-    base_writer = initexcel(basefile, gl_style, "base_writer")
-    dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
-    base_writer.close()
+    # basefile = "out/base.xlsx"
+    # base_writer = initexcel(basefile, gl_style, "base_writer")
+    # dfl.to_excel(base_writer, sheet_name="base", index=False, autofilter=True)
+    # base_writer.close()
     timer("==Запись 'base' начата", startTime)
 
     # записать возвратный план
@@ -1670,7 +1675,7 @@ def report(
         },
         {
             # ингибитор (класс 27-02040)
-            "condition": "27-02040",
+            "condition": ["27-02040", "27-029900"],
             "filterlist": wsfilter_ing,
             "summlist": wssumm_ing,
             "префиксл": "Р_ИНГ",
@@ -1690,6 +1695,14 @@ def report(
             "filterlist": wsfilter_truba,
             "summlist": wssumm_truba,
             "префиксл": "Р_труб",
+            "подразделения": podr_sgi,
+        },
+        {
+            # кислота соляная (класс 27-010301)
+            "condition": ["27-010301"],
+            "filterlist": wsfilter_kta,
+            "summlist": wssumm_kta,
+            "префиксл": "Р_кта",
             "подразделения": podr_sgi,
         },
         {
@@ -1763,12 +1776,24 @@ def report(
     #   ингибитор (класс 27-02040)
     #   кабель КПБК (класс 11-0205)
     #   труба полимерная (класс 29-020201)
-    dpropcond = ["26-050", "27-02040", "11-0205", "29-020201"]
+    dpropcond = [
+        # гсм
+        "26-050",
+        # ингибитор
+        "27-02040",
+        "27-029900",
+        # кабель
+        "11-0205",
+        # труба
+        "29-020201",
+        # кислота
+        "27-010301",
+    ]
     dfl = dfl_gl[~dfl_gl["KKM"].str.startswith(tuple(dpropcond))]
 
     for pi in theplan:
         if pi["condition"]:
-            pcond = dfl_gl["KKM"].str.startswith(pi["condition"])
+            pcond = dfl_gl["KKM"].str.startswith(tuple(pi["condition"]))
             dfl_pl = dfl_gl.loc[pcond].copy()
         else:
             # для подразделений использовать фрейм с вырезанными спец-остатками
