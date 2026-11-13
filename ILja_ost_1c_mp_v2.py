@@ -1668,6 +1668,7 @@ def report(
         {
             # ГСМ (класс 26-050)
             "condition": ["26-050"],
+            "condition2": ("Счет", "10.03"),
             "filterlist": wsfilter_gsm,
             "summlist": wssumm_gsm,
             "префиксл": "Р_ГСМ",
@@ -1676,6 +1677,7 @@ def report(
         {
             # ингибитор (класс 27-02040)
             "condition": ["27-02040", "27-029900"],
+            "exclude": {"Счет": ["10.03"]},
             "filterlist": wsfilter_ing,
             "summlist": wssumm_ing,
             "префиксл": "Р_ИНГ",
@@ -1776,6 +1778,9 @@ def report(
     #   ингибитор (класс 27-02040)
     #   кабель КПБК (класс 11-0205)
     #   труба полимерная (класс 29-020201)
+
+    # + сбросить     "Счет"="10.03" он переброшен в ГСМ
+
     dpropcond = [
         # гсм
         "26-050",
@@ -1789,11 +1794,22 @@ def report(
         # кислота
         "27-010301",
     ]
-    dfl = dfl_gl[~dfl_gl["KKM"].str.startswith(tuple(dpropcond))]
+    dfl = dfl_gl[
+        ~(
+            dfl_gl["KKM"].str.startswith(tuple(dpropcond))
+            | dfl_gl["Счет"].str.startswith("10.03")
+        )
+    ]
 
     for pi in theplan:
         if pi["condition"]:
-            pcond = dfl_gl["KKM"].str.startswith(tuple(pi["condition"]))
+            if pi.get("condition2", None):
+                pcond = dfl_gl["KKM"].str.startswith(tuple(pi["condition"])) | dfl_gl[
+                    pi["condition2"][0]
+                ].str.startswith(pi["condition2"][1])
+            else:
+                pcond = dfl_gl["KKM"].str.startswith(tuple(pi["condition"]))
+
             dfl_pl = dfl_gl.loc[pcond].copy()
         else:
             # для подразделений использовать фрейм с вырезанными спец-остатками
