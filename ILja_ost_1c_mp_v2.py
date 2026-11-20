@@ -1,7 +1,8 @@
-# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
-# pyinstaller --onefile --noconfirm --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
-# pyinstaller --onefile --noconfirm --hidden-import babel.numbers .\ILja_ost_1c_mp_v2.py
 # Вариант с использованием библиотеки "multiprocessing" для совместимости с pyinstaller
+# pyinstaller --onefile --noconfirm --upx-dir C:/python/upx/upx-5.1.1-win64 --hidden-import babel.numbers --exclude-module pandera .\ILja_ost_1c_mp_v2.py
+# pyinstaller --onefile --noconfirm --hidden-import babel.numbers --exclude-module pandera .\ILja_ost_1c_mp_v2.py
+# uv self update --system-certs
+# uv sync -U --system-certs
 
 import configparser
 
